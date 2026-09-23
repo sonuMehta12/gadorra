@@ -28,18 +28,20 @@ def _load(registration_id: UUID, db: Session) -> dict:
         raise HTTPException(status_code=409, detail={"code": "NOT_PAID", "message": str(exc)})
 
 
-@router.get("/{registration_id}")
+@router.get("/{registration_id}", summary="Receipt as JSON",
+            responses={409: {"description": "NOT_PAID"}})
 def as_json(registration_id: UUID, db: Session = Depends(get_db)) -> dict:
     return _load(registration_id, db)
 
 
-@router.get("/{registration_id}/view", response_class=HTMLResponse)
+@router.get("/{registration_id}/view", response_class=HTMLResponse,
+            summary="Printable receipt page")
 def as_html(registration_id: UUID, db: Session = Depends(get_db)) -> HTMLResponse:
     """Printable page. The browser's print dialog also saves it as a PDF."""
     return HTMLResponse(receipt_service.to_html(_load(registration_id, db)))
 
 
-@router.get("/{registration_id}/receipt.pdf")
+@router.get("/{registration_id}/receipt.pdf", summary="Receipt as a PDF download")
 def as_pdf(registration_id: UUID, db: Session = Depends(get_db)) -> Response:
     data = _load(registration_id, db)
     return Response(

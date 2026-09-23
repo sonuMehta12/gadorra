@@ -64,7 +64,23 @@ def _serialize(registration: Registration) -> RegistrationOut:
     )
 
 
-@router.post("", response_model=RegistrationOut, status_code=201)
+@router.post(
+    "",
+    response_model=RegistrationOut,
+    status_code=201,
+    summary="Submit the registration form",
+    description="Requires `X-Form-Token`. The mobile comes from the token, not the body. "
+                "The fee is decided here -- an amount in the request is ignored. "
+                "Submitting twice before paying returns the same registration.",
+    responses={
+        400: {"description": "VALIDATION_ERROR -- unknown district"},
+        401: {"description": "FORM_TOKEN_EXPIRED or FORM_TOKEN_INVALID"},
+        403: {"description": "BOT_CHECK_FAILED"},
+        409: {"description": "ALREADY_REGISTERED, or ACK_ALREADY_REDEEMED"},
+        422: {"description": "Field validation failed, or the token header is missing"},
+        429: {"description": "RATE_LIMITED"},
+    },
+)
 def create(
     payload: RegistrationIn,
     request: Request,
@@ -166,7 +182,9 @@ def create(
     return _serialize(registration)
 
 
-@router.get("/{registration_id}", response_model=RegistrationOut)
+@router.get("/{registration_id}", response_model=RegistrationOut,
+            summary="Read a registration by id",
+            description="Used by the thank-you page. The UUID is the capability.")
 def get_one(registration_id: UUID, db: Session = Depends(get_db)) -> RegistrationOut:
     registration = db.query(Registration).filter(Registration.id == registration_id).one_or_none()
     if registration is None:

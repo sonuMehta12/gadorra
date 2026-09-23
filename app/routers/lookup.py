@@ -39,7 +39,18 @@ def _fees(discounted: bool) -> tuple[int, int]:
     return disc, full - disc
 
 
-@router.post("/lookup", response_model=LookupOut)
+@router.post(
+    "/lookup",
+    response_model=LookupOut,
+    summary="Find an earlier paid registration",
+    description="Send either `acknowledgement_number` or `mobile`. Requires `X-Form-Token`, "
+                "and a mobile lookup only works for the mobile that was verified. "
+                "Returns the payable fee and the fields to prefill and lock.",
+    responses={
+        400: {"description": "VALIDATION_ERROR -- send a number or a mobile"},
+        403: {"description": "MOBILE_NOT_VERIFIED"},
+    },
+)
 def lookup(
     payload: LookupIn,
     db: Session = Depends(get_db),
@@ -115,7 +126,8 @@ def lookup(
     )
 
 
-@router.post("/resend")
+@router.post("/resend", summary="Resend the acknowledgement number on WhatsApp",
+             description="Requires `X-Form-Token`. Sends to the verified mobile only.")
 def resend(
     db: Session = Depends(get_db),
     mobile: str = Depends(verified_mobile),

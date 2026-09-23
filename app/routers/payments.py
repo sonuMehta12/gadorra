@@ -16,7 +16,20 @@ log = logging.getLogger("payments.router")
 router = APIRouter(prefix="/payments", tags=["payments"])
 
 
-@router.post("/order", response_model=OrderOut)
+@router.post(
+    "/order",
+    response_model=OrderOut,
+    summary="Create a Razorpay order",
+    description="Returns `razorpay_order_id`, the amount in paise and the public key. "
+                "Pass them to Razorpay Checkout. Calling again for an unpaid registration "
+                "reuses the open order instead of creating another.",
+    responses={
+        404: {"description": "NOT_FOUND"},
+        409: {"description": "ALREADY_PAID"},
+        502: {"description": "RAZORPAY_ERROR"},
+        503: {"description": "RAZORPAY_NOT_CONFIGURED"},
+    },
+)
 def create_order(payload: OrderIn, db: Session = Depends(get_db)) -> OrderOut:
     registration = (
         db.query(Registration)
@@ -77,7 +90,21 @@ def create_order(payload: OrderIn, db: Session = Depends(get_db)) -> OrderOut:
     )
 
 
-@router.post("/verify", response_model=VerifyOut)
+@router.post(
+    "/verify",
+    response_model=VerifyOut,
+    summary="Settle a payment after Checkout",
+    description="Send Checkout's `razorpay_order_id`, `razorpay_payment_id` and "
+                "`razorpay_signature`. The signature is verified, then the payment is fetched "
+                "from Razorpay server to server. On success the response carries the "
+                "acknowledgement number. Safe to call twice -- nothing is duplicated.",
+    responses={
+        400: {"description": "SIGNATURE_INVALID"},
+        404: {"description": "ORDER_UNKNOWN"},
+        422: {"description": "AMOUNT_MISMATCH -- the captured amount is not the order amount"},
+        502: {"description": "RAZORPAY_ERROR"},
+    },
+)
 def verify(payload: VerifyIn, db: Session = Depends(get_db)) -> VerifyOut:
     """Fast path after checkout. Signature is checked, then the status is fetched
     from Razorpay server to server -- the browser's word is never enough."""
@@ -120,7 +147,8 @@ def verify(payload: VerifyIn, db: Session = Depends(get_db)) -> VerifyOut:
     )
 
 
-@router.post("/{payment_id}/sync", response_model=VerifyOut)
+@router.post("/{payment_id}/sync", response_model=VerifyOut,
+             summary="Re-fetch a payment from Razorpay (admin)")
 def sync(payment_id: UUID, db: Session = Depends(get_db)) -> VerifyOut:
     """Admin: re-ask Razorpay what happened to this order."""
     payment = db.query(Payment).filter(Payment.id == payment_id).one_or_none()

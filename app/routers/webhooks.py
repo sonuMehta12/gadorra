@@ -14,7 +14,8 @@ router = APIRouter(prefix="/webhooks", tags=["webhooks"])
 HANDLED = {"payment.captured", "order.paid", "payment.failed", "refund.processed"}
 
 
-@router.post("/razorpay")
+@router.post("/razorpay", summary="Razorpay payment events",
+             description="Configured in the Razorpay dashboard. Not called by the front end.")
 async def razorpay_webhook(
     request: Request,
     x_razorpay_event_id: str | None = Header(default=None, alias="X-Razorpay-Event-Id"),

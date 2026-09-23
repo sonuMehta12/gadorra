@@ -10,12 +10,13 @@ from app.seed_data import CLASS_LEVELS, STREAMS
 router = APIRouter(tags=["masters"])
 
 
-@router.get("/masters/districts", response_model=list[DistrictOut])
+@router.get("/masters/districts", response_model=list[DistrictOut],
+            summary="All 75 districts for the dropdown")
 def districts(db: Session = Depends(get_db)) -> list[District]:
     return db.query(District).filter(District.active.is_(True)).order_by(District.name).all()
 
 
-@router.get("/masters/classes")
+@router.get("/masters/classes", summary="Class and stream options")
 def classes() -> dict:
     return {
         "classes": CLASS_LEVELS,
@@ -24,7 +25,13 @@ def classes() -> dict:
     }
 
 
-@router.get("/config/phase", response_model=PhaseConfigOut)
+@router.get(
+    "/config/phase",
+    response_model=PhaseConfigOut,
+    summary="Current phase, fee and the Razorpay public key",
+    description="Call this on page load. `razorpay_key_id` is the public key for Checkout; "
+                "the secret never leaves the server.",
+)
 def phase_config() -> PhaseConfigOut:
     is_pre = settings.current_phase == "PRE_LAUNCH"
     return PhaseConfigOut(

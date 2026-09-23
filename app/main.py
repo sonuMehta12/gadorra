@@ -57,11 +57,61 @@ async def lifespan(_: FastAPI):
             task.cancel()
 
 
+API_DESCRIPTION = """
+Student registration, payment and WhatsApp acknowledgement for GPET 2026.
+
+### The flow
+
+1. `POST /otp/send` — student enters their mobile, an OTP goes out on WhatsApp.
+2. `POST /otp/verify` — returns a **form token**, valid 15 minutes.
+3. `POST /registrations` — send the form with the header `X-Form-Token`.
+   The fee comes back decided by the server; never send an amount.
+4. `POST /payments/order` — returns a Razorpay `order_id` and the public key.
+   Open Razorpay Checkout with them.
+5. `POST /payments/verify` — send Checkout's three fields back. On success the
+   response carries the **acknowledgement number**. Show it on screen; it is
+   also sent on WhatsApp and printed on the receipt.
+6. `GET /receipts/{registration_id}/view` — printable receipt.
+   `.../receipt.pdf` downloads it.
+
+### Authentication
+
+There is no login. Two things stand in for it:
+
+- **`X-Form-Token`** — proves this browser verified that mobile by OTP. Needed
+  by `/registrations` and every `/acknowledgements/*` call. Expired token gives
+  `401 FORM_TOKEN_EXPIRED`; verify the mobile again.
+- **The registration UUID** — unguessable, and enough on its own to read a
+  registration or its receipt.
+
+### Errors
+
+Failures return `{"detail": {"code": "...", "message": "...", "fields": {...}}}`.
+Show `message` to the student and branch on `code`. Validation errors (422) use
+FastAPI's own shape with a `loc` path per field.
+
+### Rate limits
+
+5 registrations and 10 OTP requests per IP per 10 minutes, 100 requests per IP
+per minute overall, and 3 OTPs per mobile per hour. Over the limit gives `429`
+with a `Retry-After` header.
+"""
+
 app = FastAPI(
     title="Gradorra GPET API",
     version="0.1.0",
-    description="Student registration, payment and WhatsApp acknowledgement API.",
+    description=API_DESCRIPTION,
     lifespan=lifespan,
+    openapi_tags=[
+        {"name": "otp", "description": "Mobile verification over WhatsApp."},
+        {"name": "masters", "description": "Dropdown data and the fee for the current phase."},
+        {"name": "registrations", "description": "The registration form."},
+        {"name": "payments", "description": "Razorpay order creation and settlement."},
+        {"name": "receipts", "description": "Receipt as JSON, a printable page, or a PDF."},
+        {"name": "lookup", "description": "Find an earlier paid registration to prefill and discount."},
+        {"name": "webhooks", "description": "Razorpay calls these. Not for the front end."},
+        {"name": "meta", "description": "Health and diagnostics."},
+    ],
 )
 
 app.add_middleware(

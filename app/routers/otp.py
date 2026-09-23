@@ -14,7 +14,16 @@ from app.services.notifications import send_otp
 router = APIRouter(prefix="/otp", tags=["otp"])
 
 
-@router.post("/send", response_model=OtpSendOut)
+@router.post(
+    "/send",
+    response_model=OtpSendOut,
+    summary="Send an OTP to a mobile number",
+    responses={
+        429: {"description": "OTP_TOO_SOON (wait a few seconds) or OTP_RATE_LIMITED (3 per hour reached)"},
+        502: {"description": "OTP_SEND_FAILED -- WhatsApp rejected the message"},
+        503: {"description": "WHATSAPP_DAILY_LIMIT -- the number's 24h recipient cap is full"},
+    },
+)
 def send(payload: OtpSendIn, db: Session = Depends(get_db)) -> OtpSendOut:
     now = datetime.now(timezone.utc)
     window_start = now - timedelta(hours=1)
@@ -82,7 +91,17 @@ def send(payload: OtpSendIn, db: Session = Depends(get_db)) -> OtpSendOut:
     )
 
 
-@router.post("/verify", response_model=OtpVerifyOut)
+@router.post(
+    "/verify",
+    response_model=OtpVerifyOut,
+    summary="Verify the OTP and get a form token",
+    description="On success returns `form_token`. Send it as the `X-Form-Token` header on "
+                "`/registrations` and `/acknowledgements/*`. It lasts 15 minutes.",
+    responses={
+        400: {"description": "OTP_INVALID, OTP_EXPIRED or OTP_NOT_FOUND"},
+        429: {"description": "OTP_TOO_MANY_ATTEMPTS -- request a new code"},
+    },
+)
 def verify(payload: OtpVerifyIn, db: Session = Depends(get_db)) -> OtpVerifyOut:
     now = datetime.now(timezone.utc)
     otp = (

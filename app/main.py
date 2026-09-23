@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -62,39 +63,74 @@ Student registration, payment and WhatsApp acknowledgement for GPET 2026.
 
 ### The flow
 
-1. `POST /otp/send` — student enters their mobile, an OTP goes out on WhatsApp.
-2. `POST /otp/verify` — returns a **form token**, valid 15 minutes.
-3. `POST /registrations` — send the form with the header `X-Form-Token`.
-   The fee comes back decided by the server; never send an amount.
-4. `POST /payments/order` — returns a Razorpay `order_id` and the public key.
-   Open Razorpay Checkout with them.
-5. `POST /payments/verify` — send Checkout's three fields back. On success the
-   response carries the **acknowledgement number**. Show it on screen; it is
-   also sent on WhatsApp and printed on the receipt.
-6. `GET /receipts/{registration_id}/view` — printable receipt.
-   `.../receipt.pdf` downloads it.
+| # | Call | What you get |
+| - | ---- | ------------ |
+| 1 | `POST /otp/send` | An OTP goes to that mobile on WhatsApp |
+| 2 | `POST /otp/verify` | `form_token`, valid **15 minutes** |
+| 3 | `POST /registrations` | The registration, with the fee the server decided |
+| 4 | `POST /payments/order` | `razorpay_order_id` + the public key for Checkout |
+| 5 | `POST /payments/verify` | `PAID` and the **acknowledgement number** |
+| 6 | `GET /receipts/{id}/view` | A printable receipt (`/receipt.pdf` downloads it) |
+
+Steps 3 onward need the header `X-Form-Token: <form_token>` from step 2, except
+the payment and receipt calls, which are reached by the registration id.
+
+Never send an amount. The fee is read from server config on every call, and a
+captured payment whose amount does not match its order is refused.
+
+`POST /payments/verify` is safe to call twice -- the acknowledgement number is
+generated once and the WhatsApp message sent once, however many times it fires.
 
 ### Authentication
 
 There is no login. Two things stand in for it:
 
-- **`X-Form-Token`** — proves this browser verified that mobile by OTP. Needed
-  by `/registrations` and every `/acknowledgements/*` call. Expired token gives
-  `401 FORM_TOKEN_EXPIRED`; verify the mobile again.
-- **The registration UUID** — unguessable, and enough on its own to read a
+- **`X-Form-Token`** -- proves this browser verified that mobile by OTP. Needed by
+  `/registrations` and `/acknowledgements/*`. Missing header gives `422
+  FORM_TOKEN_MISSING`, a bad one `401 FORM_TOKEN_INVALID`, an old one `401
+  FORM_TOKEN_EXPIRED` -- in every case, verify the mobile again.
+- **The registration id** -- a UUID, unguessable, and enough on its own to read a
   registration or its receipt.
+
+A mobile lookup only works for the mobile the token was issued for.
 
 ### Errors
 
-Failures return `{"detail": {"code": "...", "message": "...", "fields": {...}}}`.
-Show `message` to the student and branch on `code`. Validation errors (422) use
-FastAPI's own shape with a `loc` path per field.
+Every failure, from a bad field to a rate limit to a server fault, returns the
+same shape:
+
+```json
+{
+  "detail": {
+    "code": "VALIDATION_ERROR",
+    "message": "Please correct the highlighted fields",
+    "fields": { "full_name": "String should have at least 2 characters" }
+  }
+}
+```
+
+- `message` is written for the student -- show it as-is.
+- `code` is for your logic. Branch on it, never on `message`.
+- `fields` appears only when specific inputs are at fault; the key is the field
+  name, so it maps straight onto the form.
 
 ### Rate limits
 
-5 registrations and 10 OTP requests per IP per 10 minutes, 100 requests per IP
-per minute overall, and 3 OTPs per mobile per hour. Over the limit gives `429`
-with a `Retry-After` header.
+| Limit | Scope |
+| ----- | ----- |
+| 5 registrations per 10 minutes | per IP |
+| 10 OTP requests per 10 minutes | per IP |
+| 3 OTP requests per hour | per mobile |
+| 100 requests per minute | per IP, everything under `/api/v1` |
+
+Over the limit gives `429` with `code` `RATE_LIMITED` or `OTP_RATE_LIMITED`, and
+a `Retry-After` header in seconds.
+
+### Generating a client
+
+`/openapi.json` is the full machine-readable schema. `npx openapi-typescript
+http://<host>/openapi.json -o src/api.d.ts` gives you typed requests and
+responses that cannot drift from this server.
 """
 
 app = FastAPI(
@@ -137,13 +173,18 @@ _BUCKETS = [
 ]
 
 
+def error_body(code: str, message: str, fields: dict[str, str] | None = None) -> dict:
+    """The one error shape this API returns, whatever went wrong."""
+    detail: dict = {"code": code, "message": message}
+    if fields:
+        detail["fields"] = fields
+    return {"detail": detail}
+
+
 def _too_many(retry_after: int) -> JSONResponse:
     return JSONResponse(
         status_code=429,
-        content={
-            "success": False,
-            "error": {"code": "RATE_LIMITED", "message": f"Too many requests. Try again in {retry_after} seconds."},
-        },
+        content=error_body("RATE_LIMITED", f"Too many requests. Try again in {retry_after} seconds."),
         headers={"Retry-After": str(retry_after)},
     )
 
@@ -172,12 +213,34 @@ async def rate_limit(request: Request, call_next):
     return await call_next(request)
 
 
+@app.exception_handler(RequestValidationError)
+async def validation_failed(request: Request, exc: RequestValidationError) -> JSONResponse:
+    """Turn FastAPI's array of errors into the same shape as every other error,
+    with one message per field so the form can highlight each input."""
+    fields: dict[str, str] = {}
+    for err in exc.errors():
+        loc = [str(part) for part in err.get("loc", []) if part not in ("body", "query", "path")]
+        name = ".".join(loc) or "request"
+        message = err.get("msg", "invalid value")
+        fields.setdefault(name, message.removeprefix("Value error, "))
+
+    missing_header = "X-Form-Token" in " ".join(fields)
+    return JSONResponse(
+        status_code=422,
+        content=error_body(
+            "FORM_TOKEN_MISSING" if missing_header else "VALIDATION_ERROR",
+            "Verify your mobile number first" if missing_header else "Please correct the highlighted fields",
+            fields,
+        ),
+    )
+
+
 @app.exception_handler(Exception)
 async def unhandled(request: Request, exc: Exception) -> JSONResponse:
     logging.getLogger("api").exception("unhandled error on %s", request.url.path)
     return JSONResponse(
         status_code=500,
-        content={"success": False, "error": {"code": "INTERNAL_ERROR", "message": "Something went wrong"}},
+        content=error_body("INTERNAL_ERROR", "Something went wrong"),
     )
 
 

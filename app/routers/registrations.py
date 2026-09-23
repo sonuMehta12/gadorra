@@ -74,10 +74,10 @@ def _serialize(registration: Registration) -> RegistrationOut:
                 "Submitting twice before paying returns the same registration.",
     responses={
         400: {"description": "VALIDATION_ERROR -- unknown district"},
-        401: {"description": "FORM_TOKEN_EXPIRED or FORM_TOKEN_INVALID"},
+        401: {"description": "FORM_TOKEN_INVALID or FORM_TOKEN_EXPIRED -- verify the mobile again"},
         403: {"description": "BOT_CHECK_FAILED"},
         409: {"description": "ALREADY_REGISTERED, or ACK_ALREADY_REDEEMED"},
-        422: {"description": "Field validation failed, or the token header is missing"},
+        422: {"description": "VALIDATION_ERROR (see `fields`) or FORM_TOKEN_MISSING"},
         429: {"description": "RATE_LIMITED"},
     },
 )

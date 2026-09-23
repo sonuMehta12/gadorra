@@ -127,6 +127,41 @@ in a button component. Meta's own page says the button is fixed at creation
 time; sending body-only returns `(#131008) Button at index 0 of type Url
 requires a parameter`. `WHATSAPP_AUTH_TEMPLATE_BUTTON=true` handles it.
 
+## Deploying it free, so the front end can start
+
+The front end only needs a public HTTPS URL. Render's free plan plus a Neon
+database gets there without a card.
+
+**1. Database — Neon.** Create a project at neon.tech, copy the connection
+string, and change the scheme to what SQLAlchemy expects:
+
+```
+postgresql+psycopg://USER:PASSWORD@HOST/DB?sslmode=require
+```
+
+**2. API — Render.** Push this repo, then New → Blueprint and pick it; Render
+reads `render.yaml`. Set these in the dashboard, not in the file:
+
+| Variable | Value |
+| --- | --- |
+| `DATABASE_URL` | the Neon string above |
+| `WHATSAPP_TOKEN` | the permanent system-user token |
+| `RAZORPAY_KEY_ID` / `RAZORPAY_KEY_SECRET` | the **test** pair while the front end is being built |
+| `RAZORPAY_WEBHOOK_SECRET` | from the Razorpay dashboard, Test Mode |
+| `CORS_ORIGINS` | the front end's origins, comma separated |
+
+`AUTO_INIT_DB=true` is already set, so the first boot creates the tables and
+loads the 75 districts. There are no migrations yet, so leave it on until
+Alembic arrives.
+
+**What the free plan costs you:** the service sleeps after 15 minutes idle and
+the next request takes about 50 seconds to wake it. Tell the front-end team, or
+they will report the API as down. The sync job does not run while asleep either,
+so a payment whose browser never came back settles on the next wake.
+
+Anything serious — go-live, load, real money — belongs on the AWS setup in the
+scope document, not here.
+
 ## Still open
 
 - `gpet_acknowledgement` is still **in review**. Until Meta approves it the

@@ -1,0 +1,54 @@
+# Render blueprint. Point Render at this repo and it reads this file.
+# The database lives on Neon (free, does not expire) -- set DATABASE_URL by hand.
+services:
+  - type: web
+    name: gradorra-api
+    runtime: docker
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: AUTO_INIT_DB
+        value: "true"
+      - key: APP_ENV
+        value: production
+      - key: CURRENT_PHASE
+        value: PRE_LAUNCH
+      - key: OTP_CHANNEL
+        value: whatsapp_template
+      - key: WHATSAPP_PROVIDER
+        value: meta
+      - key: WHATSAPP_ACK_CHANNEL
+        value: template
+      - key: WHATSAPP_AUTH_TEMPLATE_BUTTON
+        value: "true"
+      - key: WHATSAPP_API_VERSION
+        value: v25.0
+      - key: WHATSAPP_PHONE_NUMBER_ID
+        value: "1355994020929287"
+      - key: WHATSAPP_BUSINESS_ACCOUNT_ID
+        value: "1290804439764703"
+      - key: WHATSAPP_TEMPLATE_OTP
+        value: gpet_otp
+      - key: WHATSAPP_TEMPLATE_ACK
+        value: gpet_acknowledgement
+      - key: WHATSAPP_TEMPLATE_LANGUAGE
+        value: en
+      - key: ACK_EXAM_CODE
+        value: GPET26
+      - key: ACK_STATE_PREFIX
+        value: UP
+      - key: FEE_PRELAUNCH_PAISE
+        value: "9900"
+      - key: FEE_POSTLAUNCH_PAISE
+        value: "49900"
+      - key: FEE_POSTLAUNCH_DISCOUNTED_PAISE
+        value: "29900"
+      - key: JWT_SECRET
+        generateValue: true
+      # Set these in the Render dashboard, never in this file:
+      #   DATABASE_URL        postgresql+psycopg://...neon.tech/...?sslmode=require
+      #   WHATSAPP_TOKEN      permanent system-user token
+      #   RAZORPAY_KEY_ID     rzp_test_... while the front end is being built
+      #   RAZORPAY_KEY_SECRET
+      #   RAZORPAY_WEBHOOK_SECRET
+      #   CORS_ORIGINS        the front end's origins, comma separated

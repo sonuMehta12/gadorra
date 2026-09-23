@@ -20,8 +20,33 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)-7s %(name)s: %(message)s",
 )
 
+def _bootstrap_database() -> None:
+    """Idempotent: create anything missing, leave everything that exists alone."""
+    from app.database import Base, SessionLocal
+    from app.models import District
+    from app.seed_data import UP_DISTRICTS
+
+    Base.metadata.create_all(engine)
+    db = SessionLocal()
+    try:
+        if db.query(District).count() < len(UP_DISTRICTS):
+            for index, name in enumerate(UP_DISTRICTS, start=1):
+                if db.query(District).filter(District.name == name).one_or_none() is None:
+                    db.add(District(code=f"{index:02d}", name=name, state="Uttar Pradesh"))
+            db.commit()
+        logging.getLogger("bootstrap").info("database ready, %s districts", db.query(District).count())
+    finally:
+        db.close()
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    if settings.auto_init_db:
+        try:
+            _bootstrap_database()
+        except Exception:
+            logging.getLogger("bootstrap").exception("database bootstrap failed")
+
     task = None
     if settings.sync_enabled:
         task = asyncio.create_task(sync_job.run_forever())

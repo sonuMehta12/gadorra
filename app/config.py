@@ -68,6 +68,8 @@ class Settings(BaseSettings):
     bot_check_required: bool = False
 
     # background settler for payments the browser never reported
+    # create tables and seed districts on boot -- for a fresh deploy with no migrations
+    auto_init_db: bool = False
     sync_enabled: bool = True
     sync_interval_minutes: int = 10
     sync_min_age_minutes: int = 5

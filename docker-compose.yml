@@ -1,0 +1,21 @@
+services:
+  gradorra-pg:
+    image: postgres:16-alpine
+    container_name: gradorra-pg
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: gradorra
+      POSTGRES_PASSWORD: gradorra
+      POSTGRES_DB: gradorra
+    ports:
+      - "5435:5432"
+    volumes:
+      - gradorra_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gradorra -d gradorra"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  gradorra_pgdata:

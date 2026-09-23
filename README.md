@@ -129,38 +129,35 @@ requires a parameter`. `WHATSAPP_AUTH_TEMPLATE_BUTTON=true` handles it.
 
 ## Deploying it free, so the front end can start
 
-The front end only needs a public HTTPS URL. Render's free plan plus a Neon
-database gets there without a card.
-
-**1. Database — Neon.** Create a project at neon.tech, copy the connection
-string, and change the scheme to what SQLAlchemy expects:
-
-```
-postgresql+psycopg://USER:PASSWORD@HOST/DB?sslmode=require
-```
-
-**2. API — Render.** Push this repo, then New → Blueprint and pick it; Render
-reads `render.yaml`. Set these in the dashboard, not in the file:
+Everything on Render: push the repo, then **New → Blueprint** and pick it.
+`render.yaml` creates the API and a Postgres database and wires `DATABASE_URL`
+between them. Five values are marked `sync: false`, so Render asks for them:
 
 | Variable | Value |
 | --- | --- |
-| `DATABASE_URL` | the Neon string above |
 | `WHATSAPP_TOKEN` | the permanent system-user token |
 | `RAZORPAY_KEY_ID` / `RAZORPAY_KEY_SECRET` | the **test** pair while the front end is being built |
-| `RAZORPAY_WEBHOOK_SECRET` | from the Razorpay dashboard, Test Mode |
+| `RAZORPAY_WEBHOOK_SECRET` | from the Razorpay dashboard, in Test Mode |
 | `CORS_ORIGINS` | the front end's origins, comma separated |
 
-`AUTO_INIT_DB=true` is already set, so the first boot creates the tables and
-loads the 75 districts. There are no migrations yet, so leave it on until
-Alembic arrives.
+`AUTO_INIT_DB=true` is set, so the first boot creates the tables and loads the
+75 districts. There are no migrations yet, so leave it on until Alembic arrives.
 
-**What the free plan costs you:** the service sleeps after 15 minutes idle and
-the next request takes about 50 seconds to wake it. Tell the front-end team, or
-they will report the API as down. The sync job does not run while asleep either,
-so a payment whose browser never came back settles on the next wake.
+Then hand the front-end team three links:
 
-Anything serious — go-live, load, real money — belongs on the AWS setup in the
-scope document, not here.
+- `https://<service>.onrender.com/docs` — the API reference
+- `https://<service>.onrender.com/api/v1` — the base URL
+- `https://<service>.onrender.com/` — the test UI, to see the flow working
+
+**What the free plan costs you.** The service sleeps after 15 minutes idle and
+the next request takes about 50 seconds to wake it — tell the front-end team, or
+they will report the API as down. The database expires 30 days after creation,
+with a 14-day grace period; upgrading to a paid plan before then keeps the data.
+The sync job does not run while the service is asleep, so a payment whose browser
+never came back settles on the next wake instead of within ten minutes.
+
+None of this is meant for launch. That goes to the AWS setup in the scope
+document.
 
 ## Still open
 

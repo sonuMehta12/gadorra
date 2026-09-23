@@ -1,5 +1,6 @@
 from functools import lru_cache
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -74,6 +75,18 @@ class Settings(BaseSettings):
     sync_interval_minutes: int = 10
     sync_min_age_minutes: int = 5
     sync_batch_size: int = 50
+
+    @field_validator("database_url")
+    @classmethod
+    def name_the_driver(cls, v: str) -> str:
+        """Render, Heroku and RDS all hand out postgres:// or postgresql:// URLs.
+        SQLAlchemy needs the driver spelled out, so add it rather than making
+        every deployment remember to."""
+        if v.startswith("postgres://"):
+            return "postgresql+psycopg://" + v[len("postgres://"):]
+        if v.startswith("postgresql://"):
+            return "postgresql+psycopg://" + v[len("postgresql://"):]
+        return v
 
     @property
     def cors_origin_list(self) -> list[str]:

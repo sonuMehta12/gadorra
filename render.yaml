@@ -1,18 +1,39 @@
-# Render blueprint. Point Render at this repo and it reads this file.
-# The database lives on Neon (free, does not expire) -- set DATABASE_URL by hand.
+# Render blueprint: API + Postgres in one place.
+#
+# The free database expires 30 days after creation, with a 14-day grace period.
+# Upgrading to a paid plan before then keeps the data. This setup is meant to
+# unblock front-end work, not to run the launch -- that goes to AWS.
+
+databases:
+  - name: gradorra-db
+    plan: free
+    databaseName: gradorra
+    user: gradorra
+
 services:
   - type: web
     name: gradorra-api
     runtime: docker
     plan: free
+    region: singapore
     healthCheckPath: /health
     envVars:
-      - key: AUTO_INIT_DB
+      # wired automatically from the database above
+      - key: DATABASE_URL
+        fromDatabase:
+          name: gradorra-db
+          property: connectionString
+
+      - key: JWT_SECRET
+        generateValue: true
+
+      - key: AUTO_INIT_DB          # first boot creates tables + the 75 districts
         value: "true"
       - key: APP_ENV
         value: production
       - key: CURRENT_PHASE
         value: PRE_LAUNCH
+
       - key: OTP_CHANNEL
         value: whatsapp_template
       - key: WHATSAPP_PROVIDER
@@ -33,6 +54,7 @@ services:
         value: gpet_acknowledgement
       - key: WHATSAPP_TEMPLATE_LANGUAGE
         value: en
+
       - key: ACK_EXAM_CODE
         value: GPET26
       - key: ACK_STATE_PREFIX
@@ -43,12 +65,20 @@ services:
         value: "49900"
       - key: FEE_POSTLAUNCH_DISCOUNTED_PAISE
         value: "29900"
-      - key: JWT_SECRET
-        generateValue: true
-      # Set these in the Render dashboard, never in this file:
-      #   DATABASE_URL        postgresql+psycopg://...neon.tech/...?sslmode=require
-      #   WHATSAPP_TOKEN      permanent system-user token
-      #   RAZORPAY_KEY_ID     rzp_test_... while the front end is being built
+
+      # Set these in the dashboard, never here:
+      #   WHATSAPP_TOKEN            permanent system-user token
+      #   RAZORPAY_KEY_ID           rzp_test_... while the front end is being built
       #   RAZORPAY_KEY_SECRET
       #   RAZORPAY_WEBHOOK_SECRET
-      #   CORS_ORIGINS        the front end's origins, comma separated
+      #   CORS_ORIGINS              the front end's origins, comma separated
+      - key: WHATSAPP_TOKEN
+        sync: false
+      - key: RAZORPAY_KEY_ID
+        sync: false
+      - key: RAZORPAY_KEY_SECRET
+        sync: false
+      - key: RAZORPAY_WEBHOOK_SECRET
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false

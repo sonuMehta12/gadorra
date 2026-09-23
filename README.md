@@ -104,6 +104,34 @@ captcha outage must not stop registrations.
 ngrok http 8000     # then set the webhook URL to https://<id>.ngrok.app/api/v1/webhooks/razorpay
 ```
 
+## Email
+
+Email is required on the form and carries the acknowledgement number with the
+receipt PDF attached. It exists because the WhatsApp acknowledgement template is
+still in review, and a free-form WhatsApp message only lands inside a 24-hour
+customer service window that a new student will not have. Both channels are
+attempted on every payment; one failing never stops the other, and each attempt
+is its own row in `notifications`.
+
+`EMAIL_PROVIDER` is `console` (logs the message, no credentials) or `smtp`.
+SMTP was chosen over any vendor API because it survives the move to AWS -- SES
+speaks SMTP too, so switching is a change of four environment variables.
+
+Sending through Microsoft 365 needs SMTP AUTH enabled on the mailbox:
+
+```powershell
+Set-CASMailbox -Identity info@gradorra.in -SmtpClientAuthenticationDisabled $false
+```
+
+or in the Microsoft 365 admin centre: **Users → the mailbox → Mail → Manage
+email apps → Authenticated SMTP**.
+
+**This is a stopgap, not the destination.** Microsoft began randomly rejecting a
+share of Basic-auth SMTP submissions in April 2026 and turns it off by default
+for existing tenants at the end of December 2026. Microsoft 365 also caps
+sending at 30 messages a minute, which a launch-day burst will hit. Move to SES
+(or another transactional provider sending as `info@gradorra.in`) before launch.
+
 ## WhatsApp limits the code enforces
 
 Meta rejects sends that break these, and rejections hurt the number's quality

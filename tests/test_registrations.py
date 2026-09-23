@@ -4,7 +4,8 @@ import pytest
 BASE = {
     "full_name": "Anjali Singh", "father_name": "Rajesh Singh",
     "class_level": 11, "district_id": 49,
-    "address_line": "45 Hazratganj, Lucknow", "consent_whatsapp": True,
+    "address_line": "45 Hazratganj, Lucknow", "email": "anjali@example.com",
+    "consent_whatsapp": True,
 }
 
 

@@ -41,6 +41,21 @@ class Settings(BaseSettings):
     # Left off by default; the docs say the button is fixed at template creation.
     whatsapp_auth_template_button: bool = True
 
+    # ---- email ----
+    # console | smtp
+    email_provider: str = "console"
+    email_enabled: bool = True
+    email_from: str = "info@gradorra.in"
+    email_from_name: str = "GPET 2026"
+    email_reply_to: str = "info@gradorra.in"
+    email_attach_receipt: bool = True
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_use_tls: bool = True
+    smtp_use_ssl: bool = False
+
     razorpay_key_id: str = ""
     razorpay_key_secret: str = ""
     razorpay_webhook_secret: str = ""

@@ -117,6 +117,7 @@ function App() {
     form.class_level &&
     form.district_id &&
     form.address_line.trim().length >= 5 &&
+    /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(form.email.trim()) &&
     mobile.length === 10;
 
   const sendOtp = () => run(async () => {
@@ -133,6 +134,7 @@ function App() {
 
     const body = {
       ...form,
+      email: form.email.trim(),
       class_level: Number(form.class_level),
       district_id: Number(form.district_id),
       email: form.email || null,
@@ -216,8 +218,9 @@ function App() {
           <label>Complete address *</label>
           <textarea value={form.address_line} onChange={(e) => setForm({ ...form, address_line: e.target.value })} placeholder="Enter your complete address" rows={3} />
 
-          <label>Email (optional)</label>
-          <input value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="not used in this phase" />
+          <label>Email *</label>
+          <input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="you@example.com" />
+          <div className="hint">Your acknowledgement number and receipt are emailed here.</div>
 
           {cfg && cfg.phase === "POST_LAUNCH" && (
             <>
@@ -234,7 +237,7 @@ function App() {
             </button>
           </div>
           <div className="hint">
-            {detailsFilled ? "Your acknowledgement number will be sent to this WhatsApp number." : "Fill the details above, then verify your mobile."}
+            {detailsFilled ? "We will send the acknowledgement number to this WhatsApp number and to your email." : "Fill the details above, then verify your mobile."}
           </div>
 
           {otpSent && (

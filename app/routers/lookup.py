@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.database import get_db
-from app.models import Acknowledgement, Registration, RegistrationStatus, Student
+from app.models import Acknowledgement, NotificationStatus, Registration, RegistrationStatus, Student
 from app.schemas import LookupIn, LookupOut
 from app.security import verified_mobile
 
@@ -151,6 +151,11 @@ def resend(
             detail={"code": "NOT_FOUND", "message": "No paid registration found on this mobile"},
         )
 
-    send_acknowledgement(db, paid, paid.acknowledgement.number)
+    notifications = send_acknowledgement(db, paid, paid.acknowledgement.number)
     db.commit()
-    return {"sent": True, "acknowledgement_number": paid.acknowledgement.number}
+    delivered = [n.channel for n in notifications if n.status is NotificationStatus.SENT]
+    return {
+        "sent": bool(delivered),
+        "channels": delivered,
+        "acknowledgement_number": paid.acknowledgement.number,
+    }

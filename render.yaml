@@ -55,6 +55,27 @@ services:
       - key: WHATSAPP_TEMPLATE_LANGUAGE
         value: en
 
+      - key: EMAIL_ENABLED
+        value: "true"
+      - key: EMAIL_PROVIDER
+        value: smtp
+      - key: EMAIL_FROM
+        value: info@gradorra.in
+      - key: EMAIL_FROM_NAME
+        value: GPET 2026
+      - key: EMAIL_REPLY_TO
+        value: info@gradorra.in
+      - key: EMAIL_ATTACH_RECEIPT
+        value: "true"
+      - key: SMTP_HOST
+        value: smtp.office365.com
+      - key: SMTP_PORT
+        value: "587"
+      - key: SMTP_USER
+        value: info@gradorra.in
+      - key: SMTP_USE_TLS
+        value: "true"
+
       - key: ACK_EXAM_CODE
         value: GPET26
       - key: ACK_STATE_PREFIX
@@ -72,6 +93,7 @@ services:
       #   RAZORPAY_KEY_SECRET
       #   RAZORPAY_WEBHOOK_SECRET
       #   CORS_ORIGINS              the front end's origins, comma separated
+      #   SMTP_PASSWORD             the info@gradorra.in mailbox password
       - key: WHATSAPP_TOKEN
         sync: false
       - key: RAZORPAY_KEY_ID
@@ -81,4 +103,6 @@ services:
       - key: RAZORPAY_WEBHOOK_SECRET
         sync: false
       - key: CORS_ORIGINS
+        sync: false
+      - key: SMTP_PASSWORD
         sync: false

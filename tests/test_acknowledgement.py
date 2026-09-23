@@ -33,7 +33,8 @@ def test_the_number_is_unique_across_registrations(db, client, verified):
         reg = client.post("/api/v1/registrations", headers=headers, json={
             "full_name": f"Student {i}", "father_name": "Father",
             "class_level": 9, "district_id": 1,
-            "address_line": "Somewhere in Agra", "consent_whatsapp": True,
+            "address_line": "Somewhere in Agra", "email": f"s{i}@example.com",
+            "consent_whatsapp": True,
         }).json()
         order_id = f"order_T{_uuid.uuid4().hex[:12]}"
         db.add(Payment(registration_id=_uuid.UUID(reg["id"]), razorpay_order_id=order_id,

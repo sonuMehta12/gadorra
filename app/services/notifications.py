@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.models import Notification, NotificationStatus, Registration
+from app.services.email import Attachment, get_provider as get_email_provider
 from app.services.whatsapp import get_provider, to_e164
 
 log = logging.getLogger("notifications")
@@ -89,13 +90,20 @@ def _cap_reached(db: Session, recipient: str) -> bool:
     return distinct >= cap
 
 
-def _dispatch(db: Session, n: Notification, send) -> Notification:
+def _dispatch(db: Session, n: Notification, send, check_limits: bool = True) -> Notification:
+    if not check_limits:
+        return _deliver(db, n, send)
+
     waiting = _too_soon(db, n.recipient)
     if waiting is not None:
         return _block(db, n, "THROUGHPUT", f"only 1 message per {settings.whatsapp_min_seconds_between_messages}s per user, {waiting}s left")
     if _cap_reached(db, n.recipient):
         return _block(db, n, "MESSAGING_LIMIT", f"{settings.whatsapp_daily_unique_recipients} unique recipients already messaged in the last 24h")
 
+    return _deliver(db, n, send)
+
+
+def _deliver(db: Session, n: Notification, send) -> Notification:
     n.attempts += 1
     result = send()
     if result.ok:
@@ -105,7 +113,7 @@ def _dispatch(db: Session, n: Notification, send) -> Notification:
     else:
         n.status = NotificationStatus.FAILED
         n.error = result.error
-        log.error("whatsapp send failed: %s", result.error)
+        log.error("%s send failed: %s", n.channel, result.error)
     db.flush()
     return n
 
@@ -138,14 +146,25 @@ def send_otp(db: Session, mobile: str, code: str) -> Notification:
     return n
 
 
-def send_acknowledgement(db: Session, registration: Registration, number: str) -> Notification:
-    """Send the acknowledgement number.
+def send_acknowledgement(db: Session, registration: Registration, number: str) -> list[Notification]:
+    """Deliver the acknowledgement number on every channel we have.
 
-    A template is used when one is approved on the WABA. If that send is rejected
-    (in review, paused, or removed) we fall back to a free-form message rather
-    than losing the number. Free-form only lands inside a 24-hour customer service
-    window, so the number is always shown on screen and on the receipt too.
+    Email is the dependable one today -- the WhatsApp template is still in review,
+    and a free-form message only lands inside a 24-hour customer service window,
+    which a new student will not have. Both are attempted; one failing never stops
+    the other, and every attempt is recorded.
     """
+    sent: list[Notification] = []
+    ack_email = send_acknowledgement_email(db, registration, number)
+    if ack_email is not None:
+        sent.append(ack_email)
+    ack_whatsapp = send_acknowledgement_whatsapp(db, registration, number)
+    if ack_whatsapp is not None:
+        sent.append(ack_whatsapp)
+    return sent
+
+
+def send_acknowledgement_whatsapp(db: Session, registration: Registration, number: str) -> Notification | None:
     provider = get_provider()
     student = registration.student
     to = to_e164(student.mobile)
@@ -182,3 +201,65 @@ def send_acknowledgement(db: Session, registration: Registration, number: str) -
 
     n = _record(db, registration.id, "acknowledgement_text", to, {"number": number})
     return _dispatch(db, n, lambda: provider.send_text(to, body))
+
+
+def send_acknowledgement_email(db: Session, registration: Registration, number: str) -> Notification | None:
+    if not settings.email_enabled:
+        return None
+
+    student = registration.student
+    if not student.email:
+        return None
+
+    amount = f"{registration.fee_amount_paise / 100:.0f}"
+    subject = f"GPET 2026 registration confirmed -- {number}"
+    text = (
+        f"Hi {student.full_name},\n\n"
+        f"Your GPET 2026 pre-registration is confirmed.\n\n"
+        f"Acknowledgement number: {number}\n"
+        f"Class: {student.class_level}\n"
+        f"Amount paid: Rs {amount}\n\n"
+        f"Keep this number safe. You will need it at final registration, where it also\n"
+        f"gets you the returning-student fee.\n\n"
+        f"Your receipt is attached.\n\n"
+        f"Gradorra Private Limited\n"
+    )
+    html = f"""<div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;font-size:15px;color:#14161a;line-height:1.6">
+  <p>Hi {student.full_name},</p>
+  <p>Your GPET 2026 pre-registration is confirmed.</p>
+  <div style="border:1px dashed #e8681f;background:#fdf3ec;border-radius:8px;padding:14px;text-align:center;margin:18px 0">
+    <div style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#5f6672">Acknowledgement number</div>
+    <div style="font-family:ui-monospace,Menlo,monospace;font-size:20px;font-weight:700;margin-top:4px">{number}</div>
+  </div>
+  <p>Class {student.class_level} &middot; Amount paid Rs {amount}</p>
+  <p>Keep this number safe. You will need it at final registration, where it also gets
+     you the returning-student fee.</p>
+  <p style="color:#5f6672;font-size:13px">Your receipt is attached.<br>Gradorra Private Limited</p>
+</div>"""
+
+    attachments = []
+    if settings.email_attach_receipt:
+        try:
+            from app.models import Payment, PaymentStatus
+            from app.services import receipt as receipt_service
+
+            payment = (
+                db.query(Payment)
+                .filter(Payment.registration_id == registration.id, Payment.status == PaymentStatus.CAPTURED)
+                .order_by(Payment.updated_at.desc())
+                .first()
+            )
+            data = receipt_service.build(registration, payment)
+            attachments.append(Attachment(f"{data['receipt_id']}.pdf", receipt_service.to_pdf(data)))
+        except Exception:
+            # A receipt that will not render must not stop the number reaching the student.
+            log.exception("could not attach the receipt, sending the email without it")
+
+    provider = get_email_provider()
+    n = _record(db, registration.id, "acknowledgement_email", student.email, {"number": number})
+    n.channel = "email"
+    return _dispatch(
+        db, n,
+        lambda: provider.send(student.email, subject, text, html, attachments),
+        check_limits=False,  # Meta's limits are WhatsApp's, not email's
+    )

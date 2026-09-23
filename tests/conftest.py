@@ -111,7 +111,8 @@ def registration(client, verified):
         json={
             "full_name": "Test Student", "father_name": "Test Father",
             "class_level": 10, "district_id": 49,
-            "address_line": "1 Test Road, Lucknow", "consent_whatsapp": True,
+            "address_line": "1 Test Road, Lucknow", "email": "student@example.com",
+            "consent_whatsapp": True,
         },
     )
     assert r.status_code == 201, r.text

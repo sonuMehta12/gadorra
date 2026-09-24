@@ -91,3 +91,17 @@ def test_whatsapp_goes_first_and_empty_smtp_makes_no_network_call(db, paid, monk
     assert sent[0].status.value == "SENT"
     assert sent[1].status.value == "FAILED"
     assert sent[1].error.startswith("EMAIL_NOT_CONFIGURED")
+
+
+def test_with_email_disabled_only_whatsapp_goes_out(db, paid, monkeypatch):
+    from app.config import settings
+    from app.services import notifications as notif
+
+    _, _, _, result = paid
+    db.query(Notification).delete()
+    db.flush()
+    monkeypatch.setattr(settings, "email_enabled", False)
+
+    sent = notif.send_acknowledgement(db, result.registration, "GPET26/UP49/11111")
+    assert [n.channel for n in sent] == ["whatsapp"]
+    assert sent[0].status.value == "SENT"

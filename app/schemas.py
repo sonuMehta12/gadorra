@@ -68,7 +68,7 @@ class RegistrationIn(BaseModel):
     class_level: Literal[9, 10, 11, 12]
     district_id: int
     address_line: str = Field(min_length=5, max_length=240)
-    email: EmailStr
+    email: EmailStr | None = None
     consent_whatsapp: bool
     acknowledgement_number: str | None = None
     bot_check_token: str | None = None

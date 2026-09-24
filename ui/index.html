@@ -136,7 +136,7 @@ function App() {
     class_level: (v) => (!v ? "Select a class" : ""),
     district_id: (v) => (!v ? "Select a district" : ""),
     address_line: (v) => (v.trim().length < 5 ? "Enter the complete address" : ""),
-    email: (v) => (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v.trim()) ? "Enter a valid email address" : ""),
+    email: (v) => (v.trim() && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v.trim()) ? "Enter a valid email address" : ""),
   };
 
   const errors = Object.fromEntries(
@@ -159,7 +159,6 @@ function App() {
     form.class_level &&
     form.district_id &&
     form.address_line.trim().length >= 5 &&
-    /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(form.email.trim()) &&
     mobile.length === 10;
 
   const sendOtp = () => run(async () => {
@@ -180,7 +179,7 @@ function App() {
 
     const body = {
       ...form,
-      email: form.email.trim(),
+      email: form.email.trim() || null,
       class_level: Number(form.class_level),
       district_id: Number(form.district_id),
       email: form.email || null,
@@ -281,10 +280,10 @@ function App() {
           <textarea {...mark("address_line")} value={form.address_line} onChange={(e) => setForm({ ...form, address_line: e.target.value })} placeholder="Enter your complete address" rows={3} />
           <Err field="address_line" />
 
-          <label>Email <b className="req">*</b></label>
+          <label>Email (optional)</label>
           <input type="email" {...mark("email")} value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="you@example.com" />
           <Err field="email" />
-          <div className="hint">Your acknowledgement number and receipt are emailed here.</div>
+
 
           {cfg && cfg.phase === "POST_LAUNCH" && (
             <>
@@ -302,7 +301,7 @@ function App() {
           </div>
           <Err field="mobile" />
           <div className="hint">
-            {detailsFilled ? "We will send the acknowledgement number to this WhatsApp number and to your email." : "Fill the details above, then verify your mobile."}
+            {detailsFilled ? "We will send the acknowledgement number to this WhatsApp number." : "Fill the details above, then verify your mobile."}
           </div>
 
           {otpSent && (

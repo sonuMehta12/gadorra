@@ -58,8 +58,8 @@ services:
       - key: WHATSAPP_TEMPLATE_LANGUAGE
         value: en
 
-      - key: EMAIL_ENABLED
-        value: "true"
+      - key: EMAIL_ENABLED       # off: the client chose WhatsApp only for now
+        value: "false"
       - key: EMAIL_PROVIDER
         value: smtp
       - key: EMAIL_FROM

@@ -74,3 +74,17 @@ def test_fetching_a_registration(client, registration):
     r = client.get(f"/api/v1/registrations/{reg['id']}")
     assert r.status_code == 200
     assert r.json()["id"] == reg["id"]
+
+
+def test_email_is_optional(client, verified):
+    _, headers = verified("9822200099")
+    body = {k: v for k, v in BASE.items() if k != "email"}
+    r = client.post("/api/v1/registrations", headers=headers, json=body)
+    assert r.status_code == 201
+    assert r.json()["student"]["email"] is None
+
+
+def test_a_malformed_email_is_still_rejected(client, verified):
+    _, headers = verified("9822200098")
+    r = client.post("/api/v1/registrations", headers=headers, json={**BASE, "email": "not-an-email"})
+    assert r.status_code == 422

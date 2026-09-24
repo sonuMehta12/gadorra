@@ -44,7 +44,7 @@ class Settings(BaseSettings):
     # ---- email ----
     # console | smtp
     email_provider: str = "console"
-    email_enabled: bool = True
+    email_enabled: bool = False
     email_from: str = "info@gradorra.in"
     email_from_name: str = "GPET 2026"
     email_reply_to: str = "info@gradorra.in"

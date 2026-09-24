@@ -106,6 +106,12 @@ ngrok http 8000     # then set the webhook URL to https://<id>.ngrok.app/api/v1/
 
 ## Email
 
+**Off for now (`EMAIL_ENABLED=false`).** The client chose WhatsApp as the only
+channel, and the Microsoft 365 mailbox rejects SMTP logins until its
+authentication policy is changed. The field is optional on the form and still
+stored when given. Everything below still works; turning email back on is that
+one variable plus a working `SMTP_PASSWORD`.
+
 Email is required on the form and carries the acknowledgement number with the
 receipt PDF attached. It exists because the WhatsApp acknowledgement template is
 still in review, and a free-form WhatsApp message only lands inside a 24-hour

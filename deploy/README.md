@@ -1,211 +1,216 @@
 # Deploying to the Azure VM
 
-The layout the client set up:
+This is how the API is actually deployed for the client, as of September 2026.
 
 ```
-Internet ──HTTPS──> Application Gateway ──HTTP :80──> nginx ──> API :8000 (Linux VM, private)
-                    (TLS cert from Key Vault)            ├─ api  (this repo, Docker)
-                                                         └─ db   (Postgres, Docker, not exposed)
+Internet ──HTTPS──> Application Gateway ──HTTP :80──> nginx ──> API 127.0.0.1:8000
+                    (api.gpet.org.in,                  (VM: vm-gradorra-api-prod-prep-001,
+                     TLS cert from Key Vault)               10.10.2.4, Ubuntu 24.04)
+                                                                  │
+                                                                  ▼
+                                               Azure Database for PostgreSQL
+                                               psql-gradorra-prod-001 (Postgres 17, TLS)
 
-You ──RDP──> Windows jump box (public IP) ──SSH──> Linux VM
+You ──RDP──> Windows jump box ──SSH──> API VM
 ```
 
-TLS ends at the gateway, so nothing on the VM deals with certificates. The API
-listens on plain HTTP port 8000 and Postgres is reachable only from the API
-container.
+- **TLS ends at the gateway.** Nothing on the VM handles certificates.
+- **nginx on :80** belongs to the client's infra team. Their site config is
+  `/etc/nginx/sites-available/gpet-api` and proxies to `127.0.0.1:8000`.
+- **The API** runs in Docker from `docker-compose.azure.yml` and listens on
+  loopback only, so nginx is the one way in.
+- **The database** is Azure's managed Postgres, not a container. Backups and
+  failover are Azure's.
+- **Front end:** Next.js on another VM (`10.10.1.8:3000`).
 
-## The client's actual setup (found on the VM)
+Hostnames, IPs and credentials come from the info file the infra team left on
+the jump box. Ask them if it is missing.
 
-- API VM: `vm-gradorra-api-prod-prep-001`, Ubuntu 24.04
-- Database: **Azure Database for PostgreSQL**, `10.10.3.4:5432`, Postgres 17,
-  admin user `gradorradbadmin`, TLS required. Use `docker-compose.azure.yml` --
-  it runs only the API and does not start a db container.
-- Front end: Next.js on another VM, `10.10.1.8:3000`
+## Deploying a new version
 
-### Azure database, one time
-
-From the API VM, create the application database (you were in the default
-`postgres` database):
+The usual case. On the API VM:
 
 ```bash
-psql "host=10.10.3.4 port=5432 dbname=postgres user=gradorradbadmin sslmode=require"
+cd ~/gradorra && bash deploy/deploy.sh
+```
+
+It pulls `main`, rebuilds, restarts, and waits until `/health` reports ok,
+printing the API logs if it does not. It refuses to run if a required secret in
+`.env` is empty, or if `.env` names an external database without
+`COMPOSE_FILE=docker-compose.azure.yml`.
+
+Check afterwards:
+
+```bash
+curl http://localhost/health                 # through nginx
+docker ps --format '{{.Names}}  {{.Ports}}'  # one container, 127.0.0.1:8000
+```
+
+## Getting onto the VM
+
+1. **Remote Desktop to the jump box.** On a Mac, install Windows App with
+   `brew install --cask windows-app` (no App Store account needed). Add PC →
+   the jump box's public IP → the user from the info file.
+2. **SSH to the API VM** from PowerShell on the jump box:
+   ```powershell
+   ssh gradorra@10.10.2.4
+   ```
+   or with PuTTY and the `.ppk` key from the infra team.
+
+Paste one line at a time. Multi-line pastes through Remote Desktop run together
+and garble commands. In PowerShell, right-click pastes.
+
+## Setting up a fresh VM from scratch
+
+Only needed for a new or rebuilt VM.
+
+### 1. The database
+
+Create the application database once, from the VM:
+
+```bash
+psql "host=psql-gradorra-prod-001.postgres.database.azure.com port=5432 dbname=postgres user=gradorradbadmin sslmode=require"
 ```
 ```sql
 CREATE DATABASE gradorra;
 \q
 ```
 
-Then in `.env`:
+SQL statements end in `;`. Without it psql waits for more input (the prompt turns
+into `postgres->`); press Ctrl+C and type it again. Backslash commands such as
+`\q` take no semicolon.
+
+The tables and the 75 districts are created by the API on its first start.
+
+### 2. GitHub access
+
+The repo, `003aja/gradorra-gpet-api`, is private. The VM already has a key
+(`~/.ssh/id_ed25519`) on the repo owner's GitHub account, and `~/.ssh/config`
+points GitHub at it:
 
 ```
-COMPOSE_FILE=docker-compose.azure.yml
-DATABASE_URL=postgresql://gradorradbadmin:<password>@10.10.3.4:5432/gradorra?sslmode=require
+Host github.com
+  IdentityFile ~/.ssh/id_ed25519
+  IdentitiesOnly yes
 ```
 
-If the password contains `@ : / # ? %` or spaces, URL-encode them (`@` → `%40`,
-`#` → `%23`, `%` → `%25`), or the URL is misread. `AUTO_INIT_DB` builds the
-tables and the 75 districts on first start.
+Check with `ssh -T git@github.com`; it should greet `003aja`.
 
-## What you need first
+That key can reach everything the owner's account can. A read-only **deploy key**
+is the better long-term choice: `~/.ssh/gradorra_deploy.pub` is already on the VM
+for that. The repo owner adds it under Settings → Deploy keys with write access
+off, then `IdentityFile` switches to `~/.ssh/gradorra_deploy`.
 
-From the client's infra person:
-
-- the Linux VM's **private IP**
-- its **SSH username**, and a password or key
-- whether the database stays **in Docker on the VM** (what these files do) or
-  moves to **Azure Database for PostgreSQL**
-- the gateway's **domain**, and confirmation that its backend points at the VM on
-  **port 8000** with health probe path **`/health`**
-
-## 1. Get onto the jump box
-
-On a Mac, install **Windows App** (formerly Microsoft Remote Desktop) from the
-App Store. Add PC → the jump box's public IP → sign in as the user you were given.
-
-## 2. From the jump box, get onto the Linux VM
-
-Open **PowerShell** on the jump box:
-
-```powershell
-ssh <linux-user>@<linux-private-ip>
-```
-
-Windows 10/11 and Server 2019+ ship with the `ssh` command. If it is missing,
-use PuTTY.
-
-## 3. One-time setup on the VM
-
-The repo (`003aja/gradorra-gpet-api`) is **private**, so the VM needs its own
-read-only key to clone it.
-
-**a. Make a deploy key on the VM**
+### 3. Docker and the checkout
 
 ```bash
-ssh-keygen -t ed25519 -f ~/.ssh/gradorra_deploy -N "" -C "vm-gradorra-api-prod-prep-001"
-printf 'Host github.com\n  IdentityFile ~/.ssh/gradorra_deploy\n  IdentitiesOnly yes\n' >> ~/.ssh/config
-chmod 600 ~/.ssh/config
-cat ~/.ssh/gradorra_deploy.pub
-```
-
-**b. Add it to the repo.** Copy the line that starts with `ssh-ed25519`. On
-GitHub: the repo → **Settings → Deploy keys → Add deploy key** → paste it, title
-it after the VM, and leave **Allow write access unticked**. This needs admin on
-the repo; if you do not have it, send the line to the repo owner.
-
-**c. Clone and set up**
-
-```bash
-ssh -T git@github.com            # answer "yes" once; it should greet the repo
 git clone git@github.com:003aja/gradorra-gpet-api.git ~/gradorra
 cd ~/gradorra && bash deploy/setup_vm.sh
 ```
 
-`setup_vm.sh` installs Docker from Docker's own apt repository and creates `.env`
-with a random JWT secret (and a database password, used only by the
-Docker-Postgres setup).
+`setup_vm.sh` installs Docker from Docker's own apt repository, adds you to the
+`docker` group, and creates `.env` with a random `JWT_SECRET`. **Log out and SSH
+back in once** afterwards, or run `newgrp docker`; until then Docker says
+`permission denied`.
 
-**Log out and SSH back in once**, so your user picks up the `docker` group.
-
-## 4. Fill in the secrets
+### 4. `.env`
 
 ```bash
-cd ~/gradorra
-nano .env
+nano ~/gradorra/.env
 ```
+
+In nano, Ctrl+W finds a line, Ctrl+O then Enter saves, Ctrl+X quits.
 
 | Variable | Value |
 | --- | --- |
-| `WHATSAPP_TOKEN` | the permanent system-user token |
-| `WHATSAPP_PHONE_NUMBER_ID` | `1355994020929287` |
-| `WHATSAPP_BUSINESS_ACCOUNT_ID` | `1290804439764703` |
-| `OTP_CHANNEL` | `whatsapp_template` |
-| `WHATSAPP_PROVIDER` | `meta` |
-| `WHATSAPP_AUTH_TEMPLATE_BUTTON` | `true` |
-| `RAZORPAY_KEY_ID` / `RAZORPAY_KEY_SECRET` | test pair on dev, live pair only on prod |
-| `RAZORPAY_WEBHOOK_SECRET` | from the Razorpay dashboard |
-| `CORS_ORIGINS` | the front end's domain(s), comma separated -- never `*` on prod |
+| `COMPOSE_FILE` | `docker-compose.azure.yml` -- **add this line**; without it the Docker-Postgres setup runs instead |
+| `DATABASE_URL` | `postgresql://gradorradbadmin:<password>@psql-gradorra-prod-001.postgres.database.azure.com:5432/gradorra?sslmode=require` |
 | `APP_ENV` | `production` |
+| `WHATSAPP_TOKEN` | the permanent system-user token |
+| `RAZORPAY_KEY_ID` / `RAZORPAY_KEY_SECRET` | the **test** pair until the client says go live |
+| `RAZORPAY_WEBHOOK_SECRET` | from the Razorpay dashboard, same mode as the keys |
+| `CORS_ORIGINS` | the front end's public domain(s), comma separated -- not `*` |
 
-Leave `DATABASE_URL` alone: `docker-compose.prod.yml` points it at the db
-container. `POSTGRES_PASSWORD` and `JWT_SECRET` were generated in step 3.
+The database password contains `@`, which must be written `%40` in the URL.
+Otherwise everything after it is read as the host. Encode `#` as `%23` and `%` as
+`%25` the same way.
 
-Save in nano with Ctrl+O, Enter, Ctrl+X.
+The WhatsApp IDs, template names and fees are already correct in the file.
+Leave `AUTO_INIT_DB` alone: the compose file turns it on.
 
-## 5. Deploy
+### 5. nginx
 
-```bash
-bash deploy/deploy.sh
-```
-
-It refuses to start if a required secret is empty, pulls the latest code,
-rebuilds, restarts, and waits for `/health` to report ok. On failure it prints
-the last API logs.
-
-Check from the VM:
-
-```bash
-curl http://localhost:8000/health
-```
-
-and from outside, once the gateway points at it:
-
-```
-https://<gateway-domain>/health
-https://<gateway-domain>/docs
-```
-
-## 6. nginx in front (the gateway talks to port 80)
-
-The Application Gateway sends traffic to the VM on port 80, so nginx sits there
-and proxies to the API, which listens only on `127.0.0.1:8000`.
+The infra team installs nginx and owns its config. If you set up nginx yourself
+on a VM that has none, `deploy/nginx/gradorra-api.conf` is a working site config:
 
 ```bash
 sudo apt-get install -y nginx
-cd ~/gradorra && git pull
 sudo cp deploy/nginx/gradorra-api.conf /etc/nginx/sites-available/gradorra-api
 sudo ln -sf /etc/nginx/sites-available/gradorra-api /etc/nginx/sites-enabled/gradorra-api
 sudo rm -f /etc/nginx/sites-enabled/default
-sudo nginx -t
-sudo systemctl reload nginx
-bash deploy/deploy.sh
-curl http://localhost/health
+sudo nginx -t && sudo systemctl reload nginx
 ```
 
-`deploy.sh` is re-run so the API rebinds to loopback. The gateway's backend
-should point at the VM's private IP on **port 80**, health probe path `/health`.
-
-## Every later deploy
+Use only one site that claims `default_server` on port 80. With both
+`gpet-api` and `gradorra-api` enabled, `nginx -t` fails with *a duplicate
+default server*. Keep the infra team's and remove the other link:
 
 ```bash
-cd ~/gradorra && bash deploy/deploy.sh
+sudo rm /etc/nginx/sites-enabled/gradorra-api
 ```
 
-Data lives in the `pgdata` Docker volume and survives rebuilds and restarts.
+### 6. Deploy and check
+
+```bash
+bash deploy/deploy.sh
+curl http://localhost/health
+psql "host=psql-gradorra-prod-001.postgres.database.azure.com port=5432 dbname=gradorra user=gradorradbadmin sslmode=require" -c "select count(*) from districts;"
+```
+
+The last one should print **75**. That proves the API reached the Azure database
+and not some other one.
+
+## The gateway
+
+Configured by the infra team, not from the VM:
+
+- listener for **`api.gpet.org.in`** on 443 with a certificate that covers it,
+  including the intermediate certificate (a missing chain shows up as Chrome
+  refusing the site while other browsers accept it)
+- backend pool **`10.10.2.4`, port 80**
+- health probe **`/health`** over HTTP on port 80
+- a DNS A record for `api.gpet.org.in` pointing at the gateway's public IP
+
+Once it answers from outside (`https://api.gpet.org.in/health`), the front end's
+base URL is **`https://api.gpet.org.in/api/v1`** and the reference is
+`https://api.gpet.org.in/docs`.
 
 ## When something is wrong
 
 ```bash
-docker compose -f docker-compose.prod.yml ps               # both containers Up?
-docker compose -f docker-compose.prod.yml logs -f api      # live API logs
-docker compose -f docker-compose.prod.yml logs --tail 50 db
-curl http://localhost:8000/health                          # reports database_error when it cannot connect
+docker compose -f docker-compose.azure.yml ps
+docker compose -f docker-compose.azure.yml logs -f api
+curl http://localhost:8000/health     # the API directly, skipping nginx
+curl http://localhost/health          # through nginx
+sudo tail -f /var/log/nginx/access.log /var/log/nginx/error.log
 ```
 
 | Symptom | Usually |
 | --- | --- |
-| Gateway shows **502** | backend pool or probe not pointing at VM port 8000 / `/health`, or the VM's network security group blocks the gateway |
-| `/health` shows `database_error` | the db container is down -- check its logs |
-| Works from the VM, not from outside | gateway or NSG, not the app |
-| OTP returns 502 | WhatsApp token wrong in `.env` |
+| Gateway shows **502** | backend pool or probe not on port 80 / `/health`, or the VM's network security group blocks the gateway |
+| `:8000` works, `localhost/health` fails | nginx: check `sudo nginx -t` and its error log |
+| `/health` shows `database_error` | wrong `DATABASE_URL`, an unencoded `@` in the password, or the database's firewall |
+| A `postgres` container appears in `docker ps` | `COMPOSE_FILE` is missing from `.env` |
+| `permission denied` on `docker` | log out and back in after `setup_vm.sh` |
+| OTP returns 502 | the WhatsApp token in `.env` |
 
-## Backups
+## Loose ends
 
-The database is a Docker volume on one VM. Take a dump before anything risky,
-and put this on a daily cron before launch:
-
-```bash
-docker compose -f docker-compose.prod.yml exec -T db pg_dump -U gradorra gradorra | gzip > ~/backup-$(date +%F).sql.gz
-```
-
-For launch, Azure Database for PostgreSQL gives managed backups and failover.
-Moving to it is a `DATABASE_URL` change plus dropping the `db` service.
+- A `gradorra_pgdata` Docker volume on the VM is left from a deploy that ran
+  the wrong compose file. Nothing depends on it; remove it with
+  `docker volume rm gradorra_pgdata` once you are sure.
+- The API connects as the database admin user. Before launch, create a user with
+  rights on the `gradorra` database only and use that in `DATABASE_URL`.
+- The rate limiter reads the client's IP from `X-Forwarded-For`. Check its format
+  in the nginx access log once real traffic comes through the gateway. The
+  gateway can append a port, which breaks per-IP limiting.

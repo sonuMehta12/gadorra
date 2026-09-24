@@ -161,6 +161,13 @@ in a button component. Meta's own page says the button is fixed at creation
 time; sending body-only returns `(#131008) Button at index 0 of type Url
 requires a parameter`. `WHATSAPP_AUTH_TEMPLATE_BUTTON=true` handles it.
 
+## Production: the client's Azure VM
+
+The live deployment runs on the client's Azure VM behind their Application
+Gateway, against Azure Database for PostgreSQL. Everything about it -- getting
+on the VM, `.env`, nginx, deploying, and what to check when it breaks -- is in
+[`deploy/README.md`](deploy/README.md).
+
 ## Deploying it free, so the front end can start
 
 Everything on Render: push the repo, then **New → Blueprint** and pick it.

@@ -191,7 +191,8 @@ class Notification(Base, TimestampMixin):
     )
     channel: Mapped[str] = mapped_column(String(20), nullable=False, default="whatsapp")
     template: Mapped[str] = mapped_column(String(80), nullable=False)
-    recipient: Mapped[str] = mapped_column(String(20), nullable=False)
+    # a phone number or an email address (RFC 5321 caps an address at 254)
+    recipient: Mapped[str] = mapped_column(String(254), nullable=False)
     payload: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     status: Mapped[NotificationStatus] = mapped_column(
         Enum(NotificationStatus, name="notification_status"),

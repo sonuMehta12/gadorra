@@ -80,6 +80,6 @@ async def razorpay_webhook(
         if event:
             event.error = repr(exc)
             db.commit()
-        return {"status": "error", "detail": str(exc)}
+        return {"status": "error"}
 
     return {"status": "processed", "event": event_type}

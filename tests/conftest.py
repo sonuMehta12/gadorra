@@ -72,7 +72,9 @@ def db():
     """A session inside a transaction that is rolled back after the test."""
     connection = engine.connect()
     transaction = connection.begin()
-    Session = sessionmaker(bind=connection, future=True)
+    # the app calls rollback() on errors; make that undo only its own work,
+    # not the per-test transaction this fixture rolls back at the end
+    Session = sessionmaker(bind=connection, future=True, join_transaction_mode="create_savepoint")
     session = Session()
     try:
         yield session
@@ -113,7 +115,7 @@ def registration(client, verified):
         json={
             "full_name": "Test Student", "father_name": "Test Father",
             "class_level": 10, "district_id": 49,
-            "address_line": "1 Test Road, Lucknow", "email": "student@example.com",
+            "address_line": "1 Test Road, Lucknow", "email": "mohammad.student.long.address@example.com",
             "consent_whatsapp": True,
         },
     )

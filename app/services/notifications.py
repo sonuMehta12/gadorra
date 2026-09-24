@@ -23,10 +23,11 @@ from app.services.whatsapp import get_provider, to_e164
 log = logging.getLogger("notifications")
 
 
-def _record(db: Session, registration_id, template: str, recipient: str, payload: dict) -> Notification:
+def _record(db: Session, registration_id, template: str, recipient: str, payload: dict,
+            channel: str = "whatsapp") -> Notification:
     n = Notification(
         registration_id=registration_id,
-        channel="whatsapp",
+        channel=channel,
         template=template,
         recipient=recipient,
         payload=payload,
@@ -256,8 +257,8 @@ def send_acknowledgement_email(db: Session, registration: Registration, number: 
             log.exception("could not attach the receipt, sending the email without it")
 
     provider = get_email_provider()
-    n = _record(db, registration.id, "acknowledgement_email", student.email, {"number": number})
-    n.channel = "email"
+    n = _record(db, registration.id, "acknowledgement_email", student.email, {"number": number},
+                channel="email")
     return _dispatch(
         db, n,
         lambda: provider.send(student.email, subject, text, html, attachments),

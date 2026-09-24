@@ -68,9 +68,9 @@ def create_order(payload: OrderIn, db: Session = Depends(get_db)) -> OrderOut:
         )
     except RazorpayNotConfigured as exc:
         raise HTTPException(status_code=503, detail={"code": "RAZORPAY_NOT_CONFIGURED", "message": str(exc)})
-    except Exception as exc:
+    except Exception:
         log.exception("razorpay order create failed")
-        raise HTTPException(status_code=502, detail={"code": "RAZORPAY_ERROR", "message": str(exc)})
+        raise HTTPException(status_code=502, detail={"code": "RAZORPAY_ERROR", "message": "Could not start the payment. Please try again."})
 
     payment = Payment(
         registration_id=registration.id,
@@ -124,10 +124,18 @@ def verify(payload: VerifyIn, db: Session = Depends(get_db)) -> VerifyOut:
     except ValueError as exc:
         db.commit()
         raise HTTPException(status_code=422, detail={"code": "AMOUNT_MISMATCH", "message": str(exc)})
-    except Exception as exc:
+    except Exception:
         db.rollback()
-        log.exception("verify failed")
-        raise HTTPException(status_code=502, detail={"code": "RAZORPAY_ERROR", "message": str(exc)})
+        log.exception("verify failed for order %s", payload.razorpay_order_id)
+        # No exception text here: it can carry SQL, table names and student data.
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "code": "VERIFY_FAILED",
+                "message": "We could not confirm your payment yet. If money was deducted, "
+                           "it will be confirmed automatically within a few minutes.",
+            },
+        )
 
     db.commit()
 
@@ -157,9 +165,10 @@ def sync(payment_id: UUID, db: Session = Depends(get_db)) -> VerifyOut:
 
     try:
         result = payment_service.sync_from_order(db, payment)
-    except Exception as exc:
+    except Exception:
         db.rollback()
-        raise HTTPException(status_code=502, detail={"code": "RAZORPAY_ERROR", "message": str(exc)})
+        log.exception("sync failed for payment %s", payment_id)
+        raise HTTPException(status_code=502, detail={"code": "RAZORPAY_ERROR", "message": "Could not reach Razorpay. Try again shortly."})
 
     db.commit()
     if result is None:

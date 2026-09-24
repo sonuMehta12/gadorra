@@ -107,7 +107,17 @@ def apply_payment(db: Session, payment_id: str, rzp_payment: dict | None = None)
             source.redeemed_at = datetime.now(timezone.utc)
 
     db.flush()
-    send_acknowledgement(db, registration, ack.number)
+
+    # The money has landed and the number exists; nothing about messaging may undo
+    # that. Notifications run in a savepoint, so a failure rolls back only their
+    # own rows and the registration stays PAID. The number is on the screen and
+    # the receipt either way, and an admin can resend.
+    try:
+        with db.begin_nested():
+            send_acknowledgement(db, registration, ack.number)
+    except Exception:
+        log.exception("acknowledgement delivery failed for %s; payment stays settled", ack.number)
+
     return PaymentResult(registration, ack, newly_paid=True)
 
 

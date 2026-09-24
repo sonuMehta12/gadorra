@@ -28,6 +28,10 @@ def _bootstrap_database() -> None:
     from app.seed_data import UP_DISTRICTS
 
     Base.metadata.create_all(engine)
+    # create_all never alters an existing table. Columns widened after the first
+    # deploy are fixed here until Alembic arrives. Widening is safe on live data.
+    with engine.begin() as conn:
+        conn.execute(text("ALTER TABLE notifications ALTER COLUMN recipient TYPE VARCHAR(254)"))
     db = SessionLocal()
     try:
         if db.query(District).count() < len(UP_DISTRICTS):

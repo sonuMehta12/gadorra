@@ -1,0 +1,40 @@
+# Production on a single Linux VM behind the Azure Application Gateway.
+#
+# TLS ends at the gateway; the API listens on plain HTTP :8000 on the VM.
+# Postgres is only reachable from the API container -- no port is published.
+#
+#   docker compose -f docker-compose.prod.yml up -d --build
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: gradorra
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: gradorra
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gradorra -d gradorra"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  api:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      # overrides whatever DATABASE_URL is in .env, so it always points at the db container
+      DATABASE_URL: postgresql+psycopg://gradorra:${POSTGRES_PASSWORD}@db:5432/gradorra
+      AUTO_INIT_DB: "true"
+      PORT: "8000"
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  pgdata:

@@ -186,11 +186,16 @@ class ProfileStudent(BaseModel):
     mobile: str
     email: str | None
     class_level: int
+    stream: str | None = Field(description="Only for classes 11 and 12; collected at post-launch, null until then")
     district_id: int
     district_name: str
     address_line: str | None
 
 
 class ProfileOut(BaseModel):
+    is_paid: bool = Field(description="True once any registration is PAID -- use it for the verified badge")
+    acknowledgement_number: str | None = Field(
+        description="The student's acknowledgement number (the 'unique code'); null until paid"
+    )
     student: ProfileStudent
     registrations: list[ProfileRegistration] = Field(description="Newest first")

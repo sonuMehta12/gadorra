@@ -61,7 +61,8 @@ def test_requesting_a_new_code_kills_the_previous_one(client):
 
 def test_hourly_resend_cap(client):
     mobile = "9811100007"
-    for _ in range(3):
+    from app.config import settings
+    for _ in range(settings.otp_max_resends):
         assert client.post("/api/v1/otp/send", json={"mobile": mobile}).status_code == 200
     r = client.post("/api/v1/otp/send", json={"mobile": mobile})
     assert r.status_code == 429

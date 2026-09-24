@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     otp_length: int = 6
     otp_ttl_minutes: int = 10
     otp_max_attempts: int = 5
-    otp_max_resends: int = 3
+    otp_max_resends: int = 10  # per mobile per hour, login and registration combined
 
     whatsapp_provider: str = "console"
     whatsapp_phone_number_id: str = ""

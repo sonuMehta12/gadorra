@@ -131,7 +131,7 @@ same shape:
 | ----- | ----- |
 | 5 registrations per 10 minutes | per IP |
 | 10 OTP requests per 10 minutes | per IP |
-| 3 OTP requests per hour | per mobile |
+| 10 OTP requests per hour | per mobile |
 | 100 requests per minute | per IP, everything under `/api/v1` |
 
 Over the limit gives `429` with `code` `RATE_LIMITED` or `OTP_RATE_LIMITED`, and

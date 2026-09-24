@@ -94,7 +94,8 @@ def test_no_receipt_before_payment(client, registration):
 
 def test_the_hourly_otp_cap_reports_its_code(client):
     mobile = "9844400002"
-    for _ in range(3):
+    from app.config import settings
+    for _ in range(settings.otp_max_resends):
         client.post("/api/v1/otp/send", json={"mobile": mobile})
     r = client.post("/api/v1/otp/send", json={"mobile": mobile})
     assert r.status_code == 429

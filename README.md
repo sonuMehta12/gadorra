@@ -81,7 +81,7 @@ Razorpay test order, and cleans up after itself. It needs `OTP_CHANNEL=console`.
 | Where | Limit |
 | --- | --- |
 | `POST /registrations` | 5 per IP per 10 minutes |
-| `POST /otp/send` | 10 per IP per 10 minutes, and 3 per mobile per hour |
+| `POST /otp/send` | 10 per IP per 10 minutes, and 10 per mobile per hour |
 | Everything under `/api/v1` | 100 per IP per minute |
 
 Limits are applied in middleware, before request validation, so a flood of

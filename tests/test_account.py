@@ -45,3 +45,29 @@ def test_you_only_ever_see_your_own_profile(client, paid, verified):
     r = client.get("/api/v1/me", headers=stranger)
     assert r.status_code == 404  # the stranger has no registration of their own
     assert reg["id"] not in r.text
+
+
+def test_the_profile_exposes_what_the_profile_page_shows(client, paid):
+    _, headers, mobile, result = paid
+    body = client.get("/api/v1/me", headers=headers).json()
+    assert body["is_paid"] is True
+    assert body["acknowledgement_number"] == result.acknowledgement.number
+    s = body["student"]
+    for field in ("full_name", "father_name", "mobile", "email", "class_level", "stream",
+                  "district_name", "address_line"):
+        assert field in s, field
+    assert s["full_name"] == "Test Student" and s["father_name"] == "Test Father"
+
+
+def test_an_unpaid_student_is_not_verified(client, registration):
+    _, headers, _ = registration
+    body = client.get("/api/v1/me", headers=headers).json()
+    assert body["is_paid"] is False
+    assert body["acknowledgement_number"] is None
+
+
+def test_ten_otps_an_hour_then_blocked(client):
+    mobile = "9855500077"
+    for _ in range(10):
+        assert client.post("/api/v1/otp/send", json={"mobile": mobile}).status_code == 200
+    assert client.post("/api/v1/otp/send", json={"mobile": mobile}).status_code == 429

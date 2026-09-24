@@ -62,13 +62,20 @@ def me(db: Session = Depends(get_db), mobile: str = Depends(verified_mobile)) ->
             receipt_pdf_url=f"{base}/receipt.pdf" if paid else None,
         ))
 
+    # The first paid registration's number is the student's code -- it is the one
+    # post-launch redeems for the discount, so it must not change later.
+    first_paid = next((i for i in reversed(items) if i.status == "PAID" and i.acknowledgement_number), None)
+
     return ProfileOut(
+        is_paid=first_paid is not None,
+        acknowledgement_number=first_paid.acknowledgement_number if first_paid else None,
         student=ProfileStudent(
             full_name=student.full_name,
             father_name=student.father_name,
             mobile=student.mobile,
             email=student.email,
             class_level=student.class_level,
+            stream=student.stream,
             district_id=student.district_id,
             district_name=student.district.name,
             address_line=student.address_line,

@@ -163,3 +163,34 @@ class LookupOut(BaseModel):
     discount_paise: int
     prefill: dict | None = None
     message: str
+
+
+# ---------- account (login -> profile) ----------
+class ProfileRegistration(BaseModel):
+    id: UUID
+    phase: str
+    status: str
+    class_level: int
+    fee_amount_paise: int
+    discount_paise: int
+    acknowledgement_number: str | None = None
+    created_at: datetime
+    paid_at: datetime | None = None
+    receipt_url: str | None = Field(default=None, description="Printable receipt; only once PAID")
+    receipt_pdf_url: str | None = Field(default=None, description="Receipt PDF download; only once PAID")
+
+
+class ProfileStudent(BaseModel):
+    full_name: str
+    father_name: str | None
+    mobile: str
+    email: str | None
+    class_level: int
+    district_id: int
+    district_name: str
+    address_line: str | None
+
+
+class ProfileOut(BaseModel):
+    student: ProfileStudent
+    registrations: list[ProfileRegistration] = Field(description="Newest first")

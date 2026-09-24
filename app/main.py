@@ -13,7 +13,7 @@ from sqlalchemy import text
 from app.config import settings
 from app.rate_limit import client_ip, limiter
 from app.database import engine
-from app.routers import lookup, masters, otp, payments, receipts, registrations, webhooks
+from app.routers import account, lookup, masters, otp, payments, receipts, registrations, webhooks
 from app.services import sync_job
 
 logging.basicConfig(
@@ -85,6 +85,13 @@ captured payment whose amount does not match its order is refused.
 `POST /payments/verify` is safe to call twice -- the acknowledgement number is
 generated once and the WhatsApp message sent once, however many times it fires.
 
+### Logging in later
+
+A student who already registered logs in the same way: `POST /otp/send`, then
+`POST /otp/verify`, then `GET /me` with the `X-Form-Token`. It returns their
+details and every registration with its status, acknowledgement number and
+receipt links. `404 NOT_REGISTERED` means the mobile has never registered.
+
 ### Authentication
 
 There is no login. Two things stand in for it:
@@ -148,6 +155,7 @@ app = FastAPI(
         {"name": "registrations", "description": "The registration form."},
         {"name": "payments", "description": "Razorpay order creation and settlement."},
         {"name": "receipts", "description": "Receipt as JSON, a printable page, or a PDF."},
+        {"name": "account", "description": "Log in with a WhatsApp OTP and read your own profile."},
         {"name": "lookup", "description": "Find an earlier paid registration to prefill and discount."},
         {"name": "webhooks", "description": "Razorpay calls these. Not for the front end."},
         {"name": "meta", "description": "Health and diagnostics."},
@@ -164,7 +172,7 @@ app.add_middleware(
 
 for r in (
     otp.router, masters.router, registrations.router, payments.router,
-    receipts.router, lookup.router, webhooks.router,
+    receipts.router, lookup.router, account.router, webhooks.router,
 ):
     app.include_router(r, prefix=settings.api_prefix)
 

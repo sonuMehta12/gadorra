@@ -59,6 +59,12 @@
   .req{color:var(--err);font-weight:700}
   input.bad,select.bad,textarea.bad{border-color:var(--err);outline-color:var(--err)}
   .err-msg{color:var(--err);font-size:12px;margin-top:5px}
+  .tabs{max-width:560px;margin:16px auto 0;padding:0 16px;display:flex;gap:6px}
+  .tabs button{width:auto;flex:1;margin:0;background:transparent;color:var(--muted);border:1px solid var(--line);font-weight:600}
+  .tabs button.on{background:var(--brand);color:#fff;border-color:var(--brand)}
+  .badge{display:inline-block;font-size:12px;font-weight:700;padding:4px 10px;border-radius:99px}
+  .badge.ok{background:color-mix(in srgb,var(--ok) 15%,transparent);color:var(--ok)}
+  .badge.warn{background:color-mix(in srgb,var(--err) 12%,transparent);color:var(--err)}
   pre{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px;font-size:11px;overflow:auto;max-height:180px;margin:10px 0 0}
 </style>
 </head>
@@ -398,7 +404,174 @@ function App() {
     </div>
   );
 }
-ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+
+// ---------------------------------------------------------------- login
+const TOKEN_KEY = "gpet_login_token";
+const store = {
+  get: () => { try { return sessionStorage.getItem(TOKEN_KEY) || ""; } catch { return ""; } },
+  set: (t) => { try { t ? sessionStorage.setItem(TOKEN_KEY, t) : sessionStorage.removeItem(TOKEN_KEY); } catch {} },
+};
+const fmtDate = (iso) => iso ? new Date(iso).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" }) : "-";
+const STATUS_LABEL = {
+  PAID: "Paid", PENDING_PAYMENT: "Payment pending", FAILED: "Payment failed",
+  EXPIRED: "Expired", CANCELLED: "Cancelled",
+};
+
+function LoginView({ onRegister }) {
+  const [mobile, setMobile] = useState("");
+  const [code, setCode] = useState("");
+  const [otpSent, setOtpSent] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const [note, setNote] = useState("");
+  const [notRegistered, setNotRegistered] = useState(false);
+  const [profile, setProfile] = useState(null);
+
+  const loadProfile = async (token) => {
+    const p = await call("/me", { token });
+    store.set(token);
+    setProfile(p);
+  };
+
+  // a reload inside the 15-minute window keeps you logged in
+  useEffect(() => {
+    const saved = store.get();
+    if (!saved) return;
+    loadProfile(saved).catch(() => store.set(""));
+  }, []);
+
+  const run = async (fn) => {
+    setBusy(true); setErr(""); setNote(""); setNotRegistered(false);
+    try { await fn(); }
+    catch (e) {
+      if (e.code === "NOT_REGISTERED") setNotRegistered(true);
+      else if (e.code === "FORM_TOKEN_EXPIRED" || e.code === "FORM_TOKEN_INVALID") { store.set(""); setProfile(null); setErr("Your session expired. Please log in again."); }
+      else setErr(e.message);
+    }
+    finally { setBusy(false); }
+  };
+
+  const sendOtp = () => run(async () => {
+    const r = await call("/otp/send", { method: "POST", body: { mobile } });
+    setOtpSent(true);
+    setNote(r.dev_code ? `OTP sent over ${r.channel}. Dev code: ${r.dev_code}` : `OTP sent to ${mobile} on WhatsApp.`);
+    if (r.dev_code) setCode(r.dev_code);
+  });
+
+  const verify = () => run(async () => {
+    const v = await call("/otp/verify", { method: "POST", body: { mobile, code } });
+    await loadProfile(v.form_token);
+  });
+
+  const logout = () => {
+    store.set(""); setProfile(null); setMobile(""); setCode(""); setOtpSent(false); setErr(""); setNote("");
+  };
+
+  if (profile) {
+    const s = profile.student;
+    return (
+      <div className="wrap">
+        <div className="eyebrow">My registration</div>
+        <h1>Welcome, {s.full_name}</h1>
+        <div className="sub">Logged in with +91 {s.mobile}</div>
+
+        {profile.registrations.map((r) => (
+          <div className="card" key={r.id}>
+            <div className="row" style={{ alignItems: "center" }}>
+              <h2 style={{ margin: 0 }}>{r.phase === "PRE_LAUNCH" ? "Pre-registration" : "Registration"}</h2>
+              <div style={{ textAlign: "right" }}><span className={`badge ${r.status === "PAID" ? "ok" : "warn"}`}>{STATUS_LABEL[r.status] || r.status}</span></div>
+            </div>
+            {r.acknowledgement_number && (
+              <>
+                <div className="hint" style={{ marginTop: 14 }}>Acknowledgement number</div>
+                <div className="ack">{r.acknowledgement_number}</div>
+              </>
+            )}
+            <div className="kv"><span>Class</span><span>{r.class_level}</span></div>
+            <div className="kv"><span>{r.status === "PAID" ? "Amount paid" : "Amount due"}</span><span>{rupees(r.fee_amount_paise)}</span></div>
+            {r.discount_paise > 0 && <div className="kv"><span>Discount</span><span>-{rupees(r.discount_paise)}</span></div>}
+            <div className="kv"><span>Registered on</span><span>{fmtDate(r.created_at)}</span></div>
+            {r.paid_at && <div className="kv"><span>Paid on</span><span>{fmtDate(r.paid_at)}</span></div>}
+            {r.receipt_url ? (
+              <div className="row" style={{ marginTop: 16 }}>
+                <a className="btnlink" href={r.receipt_url} target="_blank" rel="noreferrer">View / print receipt</a>
+                <a className="btnlink solid" href={r.receipt_pdf_url}>Download PDF</a>
+              </div>
+            ) : r.status === "PENDING_PAYMENT" ? (
+              <div className="msg err">Payment is not complete. Open the Register tab with this mobile number to pay.</div>
+            ) : null}
+          </div>
+        ))}
+
+        <div className="card">
+          <h2>Student details</h2>
+          <div className="kv"><span>Student's name</span><span>{s.full_name}</span></div>
+          <div className="kv"><span>Father's name</span><span>{s.father_name || "-"}</span></div>
+          <div className="kv"><span>Class</span><span>{s.class_level}</span></div>
+          <div className="kv"><span>District</span><span>{s.district_name}</span></div>
+          <div className="kv"><span>Address</span><span>{s.address_line || "-"}</span></div>
+          <div className="kv"><span>WhatsApp</span><span>+91 {s.mobile}</span></div>
+          {s.email && <div className="kv"><span>Email</span><span>{s.email}</span></div>}
+          <button className="outline" onClick={logout}>Log out</button>
+        </div>
+        {err && <div className="msg err">{err}</div>}
+      </div>
+    );
+  }
+
+  return (
+    <div className="wrap">
+      <div className="eyebrow">Already registered?</div>
+      <h1>Log in to your account</h1>
+      <div className="sub">Use the WhatsApp number you registered with. We will send you an OTP.</div>
+      <div className="card">
+        <label>Mobile number (WhatsApp) <b className="req">*</b></label>
+        <div className="inline">
+          <input value={mobile} onChange={(e) => { setMobile(e.target.value.replace(/\D/g, "").slice(0, 10)); setOtpSent(false); setCode(""); }}
+                 placeholder="Enter 10-digit WhatsApp number" inputMode="numeric" />
+          <button className="outline" onClick={sendOtp} disabled={busy || mobile.length !== 10}>
+            {otpSent ? "Resend OTP" : "Send OTP"}
+          </button>
+        </div>
+        {otpSent && (
+          <>
+            <label>Enter the OTP sent to {mobile}</label>
+            <input value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                   placeholder="6-digit code" inputMode="numeric" />
+          </>
+        )}
+        <button onClick={verify} disabled={busy || !otpSent || code.length < 4}>
+          {busy ? "Please wait…" : "Log in"}
+        </button>
+        {notRegistered && (
+          <div className="msg err">
+            No registration found for {mobile}.{" "}
+            <a href="#register" onClick={(e) => { e.preventDefault(); onRegister(); }}>Register now</a>
+          </div>
+        )}
+        {err && <div className="msg err">{err}</div>}
+        {note && <div className="msg ok">{note}</div>}
+      </div>
+    </div>
+  );
+}
+
+function Root() {
+  const initial = () => (window.location.hash === "#login" ? "login" : "register");
+  const [mode, setMode] = useState(initial);
+  const go = (m) => { setMode(m); window.location.hash = m; };
+  return (
+    <>
+      <div className="tabs">
+        <button className={mode === "register" ? "on" : ""} onClick={() => go("register")}>Register</button>
+        <button className={mode === "login" ? "on" : ""} onClick={() => go("login")}>Log in</button>
+      </div>
+      {mode === "login" ? <LoginView onRegister={() => go("register")} /> : <App />}
+    </>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<Root />);
 </script>
 </body>
 </html>

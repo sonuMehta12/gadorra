@@ -75,15 +75,34 @@ use PuTTY.
 
 ## 3. One-time setup on the VM
 
+The repo (`003aja/gradorra-gpet-api`) is **private**, so the VM needs its own
+read-only key to clone it.
+
+**a. Make a deploy key on the VM**
+
 ```bash
-curl -fsSL https://raw.githubusercontent.com/sonuMehta12/gadorra/main/deploy/setup_vm.sh -o setup_vm.sh
-bash setup_vm.sh
+ssh-keygen -t ed25519 -f ~/.ssh/gradorra_deploy -N "" -C "vm-gradorra-api-prod-prep-001"
+printf 'Host github.com\n  IdentityFile ~/.ssh/gradorra_deploy\n  IdentitiesOnly yes\n' >> ~/.ssh/config
+chmod 600 ~/.ssh/config
+cat ~/.ssh/gradorra_deploy.pub
 ```
 
-This installs Docker from Docker's own apt repository, clones the repo into
-`~/gradorra`, and creates `.env` with a random database password and JWT secret
-already filled in. If the repo is made private, clone it by hand with a GitHub
-token instead.
+**b. Add it to the repo.** Copy the line that starts with `ssh-ed25519`. On
+GitHub: the repo → **Settings → Deploy keys → Add deploy key** → paste it, title
+it after the VM, and leave **Allow write access unticked**. This needs admin on
+the repo; if you do not have it, send the line to the repo owner.
+
+**c. Clone and set up**
+
+```bash
+ssh -T git@github.com            # answer "yes" once; it should greet the repo
+git clone git@github.com:003aja/gradorra-gpet-api.git ~/gradorra
+cd ~/gradorra && bash deploy/setup_vm.sh
+```
+
+`setup_vm.sh` installs Docker from Docker's own apt repository and creates `.env`
+with a random JWT secret (and a database password, used only by the
+Docker-Postgres setup).
 
 **Log out and SSH back in once**, so your user picks up the `docker` group.
 

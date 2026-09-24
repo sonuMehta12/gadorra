@@ -3,8 +3,11 @@
 #   bash setup_vm.sh
 set -euo pipefail
 
-REPO_URL="${REPO_URL:-https://github.com/sonuMehta12/gadorra.git}"
-APP_DIR="${APP_DIR:-$HOME/gradorra}"
+# The repo is private: clone over SSH with a deploy key (see deploy/README.md).
+REPO_URL="${REPO_URL:-git@github.com:003aja/gradorra-gpet-api.git}"
+# Run from inside a checkout and it uses that checkout; otherwise it clones to ~/gradorra.
+SCRIPT_REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/null && git rev-parse --show-toplevel 2>/dev/null || true)"
+APP_DIR="${APP_DIR:-${SCRIPT_REPO:-$HOME/gradorra}}"
 
 echo "==> installing Docker from Docker's official apt repository"
 sudo apt-get update -y

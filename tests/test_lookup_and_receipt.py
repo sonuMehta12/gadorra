@@ -64,7 +64,7 @@ def test_receipt_json_carries_the_student_and_the_number(client, paid):
     assert body["student"]["name"] == "Test Student"
     assert body["payment"]["amount"] == "Rs 99.00"
     assert body["receipt_id"].endswith(result.acknowledgement.number.rsplit("/", 1)[-1])
-    assert len(body["perks"]) == 4
+    assert "perks" not in body
 
 
 def test_receipt_html_and_pdf_render(client, paid):
@@ -75,3 +75,13 @@ def test_receipt_html_and_pdf_render(client, paid):
     assert pdf.status_code == 200
     assert pdf.content.startswith(b"%PDF")
     assert "attachment" in pdf.headers["content-disposition"]
+
+
+def test_receipt_carries_the_logo_and_the_watermark(client, paid):
+    reg, _, _, _ = paid
+    html = client.get(f"/api/v1/receipts/{reg['id']}/view").text
+    assert html.count("data:image/png;base64,") == 2  # header logo + watermark
+    assert "perks" not in html.lower()
+    pdf = client.get(f"/api/v1/receipts/{reg['id']}/receipt.pdf").content
+    assert pdf.count(b"/Subtype /Image") >= 2
+    assert b"PERKS" not in pdf

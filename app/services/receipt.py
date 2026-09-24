@@ -3,8 +3,11 @@
 The registration UUID is the capability -- it is unguessable, and a receipt is
 only ever built for a registration that is actually PAID.
 """
+import base64
 from datetime import datetime, timezone
+from functools import cache
 from io import BytesIO
+from pathlib import Path
 
 from app.config import settings
 from app.models import Payment, Registration, RegistrationStatus
@@ -12,16 +15,15 @@ from app.models import Payment, Registration, RegistrationStatus
 COMPANY = "GRADORRA PRIVATE LIMITED"
 WEBSITE = "https://gpet.org.in"
 
-PERKS = [
-    ("24-Hour Launch Advantage", "Priority registration link before the general public."),
-    ("Question Paper Practice Set", "Early access to official mock tests and sample papers."),
-    ("Priority Admit Card", "Priority allocation of roll number and examination centre."),
-    (
-        "Post-Registration Discount",
-        f"Pay only Rs {settings.fee_postlaunch_discounted_paise // 100} instead of "
-        f"Rs {settings.fee_postlaunch_paise // 100} at final registration.",
-    ),
-]
+ASSETS = Path(__file__).resolve().parent.parent / "assets"
+LOGO = ASSETS / "logo.png"                 # header, 360px
+WATERMARK = ASSETS / "logo_watermark.png"  # same mark, alpha already faded to ~7%
+
+
+@cache
+def _data_uri(path: Path) -> str:
+    """Inline the image so a printed or saved receipt never loses its logo."""
+    return "data:image/png;base64," + base64.b64encode(path.read_bytes()).decode()
 
 
 class ReceiptUnavailable(Exception):
@@ -67,7 +69,6 @@ def build(registration: Registration, payment: Payment | None = None) -> dict:
             "status": "Paid Online (Secure Gateway)",
             "reference": (payment.razorpay_payment_id if payment else None) or "-",
         },
-        "perks": [{"title": t, "detail": d} for t, d in PERKS],
         "website": WEBSITE,
     }
 
@@ -95,9 +96,6 @@ def to_html(r: dict) -> str:
             ("Transaction Ref", r["payment"]["reference"]),
         ]
     )
-    perks = "".join(
-        f'<li><b>{p["title"]}:</b> {p["detail"]}</li>' for p in r["perks"]
-    )
     ack_block = (
         f'<div class="ack"><div class="ack-label">Acknowledgement Number</div>'
         f'<div class="ack-no">{r["acknowledgement_number"]}</div></div>'
@@ -113,7 +111,10 @@ def to_html(r: dict) -> str:
  :root{{--ink:#14161a;--muted:#5f6672;--line:#d9dde2;--brand:#e8681f;--ok:#0f7b3d}}
  *{{box-sizing:border-box}}
  body{{margin:0;background:#f4f5f7;color:var(--ink);font:14px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}}
- .sheet{{max-width:720px;margin:24px auto;background:#fff;border:1px solid var(--line);padding:32px}}
+ .sheet{{position:relative;overflow:hidden;max-width:720px;margin:24px auto;background:#fff;border:1px solid var(--line);padding:32px}}
+ .wm{{position:absolute;left:50%;top:55%;width:62%;transform:translate(-50%,-50%);pointer-events:none;z-index:0}}
+ .sheet>*:not(.wm){{position:relative;z-index:1}}
+ .logo{{display:block;height:64px;margin:0 auto 10px}}
  .head{{text-align:center;border-bottom:2px solid var(--ink);padding-bottom:14px}}
  .company{{font-size:18px;font-weight:800;letter-spacing:.04em}}
  .doc{{font-size:13px;color:var(--muted);margin-top:4px}}
@@ -127,7 +128,6 @@ def to_html(r: dict) -> str:
  .ack{{margin-top:18px;border:1px dashed var(--brand);border-radius:8px;padding:12px;text-align:center;background:#fdf3ec}}
  .ack-label{{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}}
  .ack-no{{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:20px;font-weight:800;margin-top:3px}}
- ol{{margin:8px 0 0;padding-left:20px}} li{{margin-bottom:6px}}
  .foot{{margin-top:28px;padding-top:12px;border-top:2px solid var(--ink);text-align:center;font-size:11px;color:var(--muted)}}
  .bar{{max-width:720px;margin:0 auto 0;display:flex;gap:10px;justify-content:flex-end}}
  .bar a,.bar button{{font:inherit;font-weight:600;padding:9px 16px;border-radius:8px;border:1px solid var(--brand);background:#fff;color:var(--brand);cursor:pointer;text-decoration:none}}
@@ -145,7 +145,9 @@ def to_html(r: dict) -> str:
   <button onclick="window.print()">Print</button>
 </div>
 <div class="sheet">
+  <img class="wm" src="{_data_uri(WATERMARK)}" alt="">
   <div class="head">
+    <img class="logo" src="{_data_uri(LOGO)}" alt="GPET">
     <div class="company">{r['company']}</div>
     <div class="doc">{r['title']}</div>
     <div class="status">&#10003; {r['status']}</div>
@@ -154,7 +156,6 @@ def to_html(r: dict) -> str:
   {ack_block}
   <h2>Student details</h2><table>{rows}</table>
   <h2>Payment breakdown</h2><table>{pay}</table>
-  <h2>Exclusive perks unlocked</h2><ol>{perks}</ol>
   <div class="foot">
     This is a computer-generated digital receipt and does not require a signature.<br>
     {r['company'].title()} &middot; {r['website']}
@@ -172,7 +173,7 @@ def to_pdf(r: dict) -> bytes:
     from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
     from reportlab.lib.units import mm
     from reportlab.platypus import (
-        HRFlowable, ListFlowable, ListItem, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle,
+        HRFlowable, Image, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle,
     )
 
     buf = BytesIO()
@@ -182,7 +183,6 @@ def to_pdf(r: dict) -> bytes:
         title=f"Receipt {r['receipt_id']}", author=r["company"],
     )
     base = getSampleStyleSheet()
-    brand = colors.HexColor("#e8681f")
     muted = colors.HexColor("#5f6672")
 
     st_company = ParagraphStyle("c", parent=base["Title"], fontSize=15, leading=19, alignment=TA_CENTER, spaceAfter=2)
@@ -194,7 +194,6 @@ def to_pdf(r: dict) -> bytes:
     st_ack = ParagraphStyle("a", parent=base["Normal"], fontName="Courier-Bold", fontSize=15,
                             alignment=TA_CENTER, spaceBefore=4)
     st_small = ParagraphStyle("f", parent=base["Normal"], fontSize=8, alignment=TA_CENTER, textColor=muted, leading=11)
-    st_li = ParagraphStyle("li", parent=base["Normal"], fontSize=9.5, leading=13)
 
     def kv_table(pairs):
         t = Table([[Paragraph(k, ParagraphStyle("k", parent=base["Normal"], fontSize=9.5, textColor=muted)),
@@ -210,7 +209,13 @@ def to_pdf(r: dict) -> bytes:
 
     s = r["student"]
     p = r["payment"]
+    logo_h = 20 * mm
+    with open(LOGO, "rb") as fh:
+        from PIL import Image as PILImage
+        lw, lh = PILImage.open(fh).size
     story = [
+        Image(str(LOGO), width=logo_h * lw / lh, height=logo_h),
+        Spacer(1, 4),
         Paragraph(r["company"], st_company),
         Paragraph(r["title"], st_doc),
         Paragraph("&#10003; STATUS: " + r["status"], st_ok),
@@ -243,14 +248,6 @@ def to_pdf(r: dict) -> bytes:
             ("Description", p["description"]), ("Amount Paid", p["amount"]),
             ("Payment Status", p["status"]), ("Transaction Ref", p["reference"]),
         ]),
-        Paragraph("EXCLUSIVE PERKS UNLOCKED", st_h),
-        HRFlowable(width="100%", thickness=0.5, color=colors.HexColor("#d9dde2")),
-        Spacer(1, 4),
-        ListFlowable(
-            [ListItem(Paragraph(f"<b>{x['title']}:</b> {x['detail']}", st_li), leftIndent=14)
-             for x in r["perks"]],
-            bulletType="1", bulletColor=brand, leftIndent=14,
-        ),
         Spacer(1, 18),
         HRFlowable(width="100%", thickness=1.2, color=colors.HexColor("#14161a")),
         Spacer(1, 5),
@@ -258,5 +255,14 @@ def to_pdf(r: dict) -> bytes:
         Paragraph(f"{r['company'].title()} &middot; {r['website']}", st_small),
     ]
 
-    doc.build(story)
+    def watermark(canvas, _doc):
+        page_w, page_h = A4
+        w = 125 * mm
+        canvas.saveState()
+        # a w x w box centred on the page; the image keeps its shape inside it
+        canvas.drawImage(str(WATERMARK), (page_w - w) / 2, (page_h - w) / 2 - 10 * mm,
+                         width=w, height=w, preserveAspectRatio=True, mask="auto", anchor="c")
+        canvas.restoreState()
+
+    doc.build(story, onFirstPage=watermark, onLaterPages=watermark)
     return buf.getvalue()

@@ -246,13 +246,30 @@ async def unhandled(request: Request, exc: Exception) -> JSONResponse:
 
 @app.get("/health", tags=["meta"])
 def health() -> dict:
+    """Says *why* it is unhealthy. A bare database:false sends people hunting."""
     db_ok = True
+    db_error = None
     try:
         with engine.connect() as conn:
             conn.execute(text("select 1"))
-    except Exception:
+    except Exception as exc:
         db_ok = False
-    return {
+        logging.getLogger("health").exception("database unreachable")
+        # The message can carry the host and user; keep the shape, drop the detail.
+        db_error = type(exc).__name__
+        reason = str(exc).lower()
+        if "could not translate host name" in reason or "name or service not known" in reason:
+            db_error += ": host not found -- is the database in the same region as this service?"
+        elif "timeout" in reason or "timed out" in reason:
+            db_error += ": connection timed out"
+        elif "password" in reason or "authentication" in reason:
+            db_error += ": authentication rejected"
+        elif "does not exist" in reason:
+            db_error += ": database or role does not exist"
+        elif "ssl" in reason:
+            db_error += ": TLS negotiation failed -- try sslmode=require"
+
+    body = {
         "status": "ok" if db_ok else "degraded",
         "database": db_ok,
         "phase": settings.current_phase,
@@ -261,12 +278,19 @@ def health() -> dict:
         "razorpay_configured": settings.razorpay_configured,
         "sync_job": settings.sync_enabled,
     }
+    if db_error:
+        body["database_error"] = db_error
+    return body
 
 
 UI_DIR = Path(__file__).resolve().parent.parent / "ui"
+# The test UI is edited constantly; a cached copy sends people hunting for bugs
+# that were fixed an hour ago.
+NO_CACHE = {"Cache-Control": "no-store, must-revalidate", "Pragma": "no-cache"}
+
 if UI_DIR.exists():
     app.mount("/ui", StaticFiles(directory=UI_DIR, html=True), name="ui")
 
     @app.get("/", include_in_schema=False)
     def root() -> FileResponse:
-        return FileResponse(UI_DIR / "index.html")
+        return FileResponse(UI_DIR / "index.html", headers=NO_CACHE)

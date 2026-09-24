@@ -56,6 +56,9 @@
   @media (max-width:480px){.row{flex-direction:column;gap:0}.inline{flex-direction:column}.inline button{width:100%}}
   .btnlink{display:block;text-align:center;padding:11px 14px;border-radius:8px;border:1px solid var(--brand);color:var(--brand);text-decoration:none;font-weight:600;font-size:14px}
   .btnlink.solid{background:var(--brand);color:#fff}
+  .req{color:var(--err);font-weight:700}
+  input.bad,select.bad,textarea.bad{border-color:var(--err);outline-color:var(--err)}
+  .err-msg{color:var(--err);font-size:12px;margin-top:5px}
   pre{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px;font-size:11px;overflow:auto;max-height:180px;margin:10px 0 0}
 </style>
 </head>
@@ -72,7 +75,10 @@ async function call(path, { method = "GET", body, token } = {}) {
   const data = await r.json().catch(() => ({}));
   if (!r.ok) {
     const d = data.detail || data;
-    throw new Error(d.message || d.detail || JSON.stringify(d));
+    const error = new Error(d.message || d.detail || JSON.stringify(d));
+    error.code = d.code;
+    error.fields = d.fields;
+    throw error;
   }
   return data;
 }
@@ -90,6 +96,7 @@ function App() {
     full_name: "", father_name: "", class_level: "", district_id: "",
     address_line: "", email: "", consent_whatsapp: false, acknowledgement_number: "",
   });
+  const [districtText, setDistrictText] = useState("");
   const [mobile, setMobile] = useState("");
   const [otpSent, setOtpSent] = useState(false);
   const [code, setCode] = useState("");
@@ -106,10 +113,45 @@ function App() {
     call("/masters/districts").then(setDistricts).catch((e) => setErr(e.message));
   }, []);
 
+  const [serverErrors, setServerErrors] = useState({});
+
   const run = async (fn) => {
-    setBusy(true); setErr(""); setNote("");
-    try { await fn(); } catch (e) { setErr(e.message); } finally { setBusy(false); }
+    setBusy(true); setErr(""); setNote(""); setServerErrors({});
+    try {
+      await fn();
+    } catch (e) {
+      setErr(e.message);
+      if (e.fields) setServerErrors(e.fields);
+    } finally {
+      setBusy(false);
+    }
   };
+
+  const [touched, setTouched] = useState({});
+  const [showAllErrors, setShowAllErrors] = useState(false);
+
+  const RULES = {
+    full_name: (v) => (v.trim().length < 2 ? "Enter the student's full name" : ""),
+    father_name: (v) => (v.trim().length < 2 ? "Enter the father's name" : ""),
+    class_level: (v) => (!v ? "Select a class" : ""),
+    district_id: (v) => (!v ? "Select a district" : ""),
+    address_line: (v) => (v.trim().length < 5 ? "Enter the complete address" : ""),
+    email: (v) => (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v.trim()) ? "Enter a valid email address" : ""),
+  };
+
+  const errors = Object.fromEntries(
+    Object.entries(RULES).map(([k, check]) => [k, check(String(form[k] ?? ""))]).filter(([, msg]) => msg)
+  );
+  if (mobile.length !== 10) errors.mobile = "Enter a 10-digit mobile number";
+  if (otpSent && code.length < 4) errors.code = "Enter the OTP sent to your WhatsApp";
+  if (!form.consent_whatsapp) errors.consent = "Please accept the terms to continue";
+
+  const errorFor = (field) => ((touched[field] || showAllErrors) ? errors[field] : "");
+  const mark = (field) => ({
+    className: errorFor(field) ? "bad" : "",
+    onBlur: () => setTouched((t) => ({ ...t, [field]: true })),
+  });
+  const Err = ({ field }) => (errorFor(field) ? <div className="err-msg">{errorFor(field)}</div> : null);
 
   const detailsFilled =
     form.full_name.trim().length >= 2 &&
@@ -129,6 +171,10 @@ function App() {
 
   // one button: verify the OTP, create the registration, open checkout
   const proceed = () => run(async () => {
+    setShowAllErrors(true);
+    if (Object.keys(errors).length) {
+      throw new Error("Please correct the highlighted fields before continuing.");
+    }
     const v = await call("/otp/verify", { method: "POST", body: { mobile, code } });
     setToken(v.form_token);
 
@@ -173,7 +219,8 @@ function App() {
 
   const reset = () => {
     setForm({ full_name: "", father_name: "", class_level: "", district_id: "", address_line: "", email: "", consent_whatsapp: false, acknowledgement_number: "" });
-    setMobile(""); setCode(""); setOtpSent(false); setToken("");
+    setMobile(""); setCode(""); setOtpSent(false); setToken(""); setDistrictText("");
+    setTouched({}); setShowAllErrors(false); setServerErrors({});
     setRegistration(null); setResult(null); setLookup(null); setErr(""); setNote("");
   };
 
@@ -189,37 +236,54 @@ function App() {
         <div className="card">
           <div className="row">
             <div>
-              <label>Student's full name *</label>
-              <input value={form.full_name} onChange={(e) => setForm({ ...form, full_name: e.target.value })} placeholder="Enter full name" />
+              <label>Student's full name <b className="req">*</b></label>
+              <input {...mark("full_name")} value={form.full_name} onChange={(e) => setForm({ ...form, full_name: e.target.value })} placeholder="Enter full name" />
+              <Err field="full_name" />
             </div>
             <div>
-              <label>Father's name *</label>
-              <input value={form.father_name} onChange={(e) => setForm({ ...form, father_name: e.target.value })} placeholder="Enter father's name" />
+              <label>Father's name <b className="req">*</b></label>
+              <input {...mark("father_name")} value={form.father_name} onChange={(e) => setForm({ ...form, father_name: e.target.value })} placeholder="Enter father's name" />
+              <Err field="father_name" />
             </div>
           </div>
 
           <div className="row">
             <div>
-              <label>Class *</label>
-              <select value={form.class_level} onChange={(e) => setForm({ ...form, class_level: e.target.value })}>
+              <label>Class <b className="req">*</b></label>
+              <select {...mark("class_level")} value={form.class_level} onChange={(e) => setForm({ ...form, class_level: e.target.value })}>
                 <option value="">Select your class</option>
                 {[9, 10, 11, 12].map((c) => <option key={c} value={c}>Class {c}</option>)}
               </select>
+              <Err field="class_level" />
             </div>
             <div>
-              <label>District *</label>
-              <select value={form.district_id} onChange={(e) => setForm({ ...form, district_id: e.target.value })}>
-                <option value="">Select your district</option>
-                {districts.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
-              </select>
+              <label>District <b className="req">*</b></label>
+              <input
+                {...mark("district_id")}
+                list="district-list"
+                value={districtText}
+                onChange={(e) => {
+                  const text = e.target.value;
+                  setDistrictText(text);
+                  const hit = districts.find((d) => d.name.toLowerCase() === text.trim().toLowerCase());
+                  setForm({ ...form, district_id: hit ? String(hit.id) : "" });
+                }}
+                placeholder={districts.length ? `Type to search ${districts.length} districts` : "Loading districts..."}
+              />
+              <datalist id="district-list">
+                {districts.map((d) => <option key={d.id} value={d.name} />)}
+              </datalist>
+              <Err field="district_id" />
             </div>
           </div>
 
-          <label>Complete address *</label>
-          <textarea value={form.address_line} onChange={(e) => setForm({ ...form, address_line: e.target.value })} placeholder="Enter your complete address" rows={3} />
+          <label>Complete address <b className="req">*</b></label>
+          <textarea {...mark("address_line")} value={form.address_line} onChange={(e) => setForm({ ...form, address_line: e.target.value })} placeholder="Enter your complete address" rows={3} />
+          <Err field="address_line" />
 
-          <label>Email *</label>
-          <input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="you@example.com" />
+          <label>Email <b className="req">*</b></label>
+          <input type="email" {...mark("email")} value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="you@example.com" />
+          <Err field="email" />
           <div className="hint">Your acknowledgement number and receipt are emailed here.</div>
 
           {cfg && cfg.phase === "POST_LAUNCH" && (
@@ -229,13 +293,14 @@ function App() {
             </>
           )}
 
-          <label>Mobile number (WhatsApp) *</label>
+          <label>Mobile number (WhatsApp) <b className="req">*</b></label>
           <div className="inline">
             <input value={mobile} onChange={(e) => { setMobile(e.target.value.replace(/\D/g, "").slice(0, 10)); setOtpSent(false); setCode(""); }} placeholder="Enter 10-digit WhatsApp number" inputMode="numeric" />
             <button className="outline" onClick={sendOtp} disabled={busy || mobile.length !== 10 || !detailsFilled}>
               {otpSent ? "Resend OTP" : "Send OTP"}
             </button>
           </div>
+          <Err field="mobile" />
           <div className="hint">
             {detailsFilled ? "We will send the acknowledgement number to this WhatsApp number and to your email." : "Fill the details above, then verify your mobile."}
           </div>
@@ -243,7 +308,8 @@ function App() {
           {otpSent && (
             <>
               <label>Enter the OTP sent to {mobile}</label>
-              <input value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))} placeholder="6-digit code" inputMode="numeric" />
+              <input {...mark("code")} value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))} placeholder="6-digit code" inputMode="numeric" />
+              <Err field="code" />
             </>
           )}
 
@@ -251,6 +317,13 @@ function App() {
             <input type="checkbox" id="c" checked={form.consent_whatsapp} onChange={(e) => setForm({ ...form, consent_whatsapp: e.target.checked })} />
             <span>By clicking proceed, I agree to the GPET 2026 Terms &amp; Conditions and Privacy Policy, and to receive updates on WhatsApp.</span>
           </div>
+          <Err field="consent" />
+
+          {Object.keys(serverErrors).length > 0 && (
+            <div className="msg err">
+              {Object.entries(serverErrors).map(([f, m]) => <div key={f}><b>{f}</b>: {m}</div>)}
+            </div>
+          )}
 
           {cfg && (
             <div className="fee">
@@ -268,8 +341,8 @@ function App() {
             </div>
           )}
 
-          <button onClick={proceed} disabled={busy || !detailsFilled || !otpSent || code.length < 4 || !form.consent_whatsapp}>
-            {busy ? "Please wait…" : `Proceed to Pre-Registration →`}
+          <button onClick={proceed} disabled={busy || !otpSent}>
+            {busy ? "Please wait…" : otpSent ? "Proceed to Pre-Registration →" : "Verify your mobile to continue"}
           </button>
           <div className="hint center">By proceeding, you confirm that the information provided by you is correct.</div>
           <div className="hint center">Test mode — UPI: <b>success@razorpay</b> · Card: <b>4100 2800 0000 1007</b> (4111… is an international card and will be rejected)</div>

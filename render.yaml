@@ -7,6 +7,9 @@
 databases:
   - name: gradorra-db
     plan: free
+    # Must match the service's region. Render's internal connection does not
+    # cross regions, and a database cannot be moved after it is created.
+    region: singapore
     databaseName: gradorra
     user: gradorra
 

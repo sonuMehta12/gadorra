@@ -14,4 +14,5 @@ services:
       AUTO_INIT_DB: "true"   # creates tables + districts on first boot; safe to re-run
       PORT: "8000"
     ports:
-      - "8000:8000"
+      # loopback only: nginx on :80 is the one door in from the gateway
+      - "127.0.0.1:8000:8000"

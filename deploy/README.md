@@ -3,7 +3,7 @@
 The layout the client set up:
 
 ```
-Internet ──HTTPS──> Application Gateway ──HTTP :8000──> Linux VM (private)
+Internet ──HTTPS──> Application Gateway ──HTTP :80──> nginx ──> API :8000 (Linux VM, private)
                     (TLS cert from Key Vault)            ├─ api  (this repo, Docker)
                                                          └─ db   (Postgres, Docker, not exposed)
 
@@ -153,6 +153,26 @@ and from outside, once the gateway points at it:
 https://<gateway-domain>/health
 https://<gateway-domain>/docs
 ```
+
+## 6. nginx in front (the gateway talks to port 80)
+
+The Application Gateway sends traffic to the VM on port 80, so nginx sits there
+and proxies to the API, which listens only on `127.0.0.1:8000`.
+
+```bash
+sudo apt-get install -y nginx
+cd ~/gradorra && git pull
+sudo cp deploy/nginx/gradorra-api.conf /etc/nginx/sites-available/gradorra-api
+sudo ln -sf /etc/nginx/sites-available/gradorra-api /etc/nginx/sites-enabled/gradorra-api
+sudo rm -f /etc/nginx/sites-enabled/default
+sudo nginx -t
+sudo systemctl reload nginx
+bash deploy/deploy.sh
+curl http://localhost/health
+```
+
+`deploy.sh` is re-run so the API rebinds to loopback. The gateway's backend
+should point at the VM's private IP on **port 80**, health probe path `/health`.
 
 ## Every later deploy
 

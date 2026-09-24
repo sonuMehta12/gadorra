@@ -10,6 +10,21 @@ FILE="$(grep -E '^COMPOSE_FILE=' .env | cut -d= -f2- || true)"
 FILE="${FILE:-docker-compose.prod.yml}"
 echo "==> using $FILE"
 
+# prod.yml starts its own Postgres and overrides DATABASE_URL. If .env points at
+# an external database, running prod.yml would silently ignore it -- stop instead.
+DB_URL="$(grep -E '^DATABASE_URL=' .env | cut -d= -f2- || true)"
+case "$FILE" in
+  *azure*) ;;
+  *)
+    if [ -n "$DB_URL" ] && ! echo "$DB_URL" | grep -qE '@(localhost|127\.0\.0\.1|db)[:/]'; then
+      echo "!! .env points DATABASE_URL at an external database, but $FILE runs its"
+      echo "   own Postgres and would ignore it. Add this line to .env and run again:"
+      echo "     COMPOSE_FILE=docker-compose.azure.yml"
+      exit 1
+    fi
+    ;;
+esac
+
 REQUIRED="JWT_SECRET WHATSAPP_TOKEN RAZORPAY_KEY_ID RAZORPAY_KEY_SECRET"
 case "$FILE" in
   *azure*) REQUIRED="$REQUIRED DATABASE_URL" ;;

@@ -1,0 +1,17 @@
+# Azure: the API only. The database is Azure Database for PostgreSQL on the
+# private network (10.10.3.4), so there is no db container here.
+#
+# Put this in .env and deploy.sh picks it up:
+#   COMPOSE_FILE=docker-compose.azure.yml
+#   DATABASE_URL=postgresql://gradorradbadmin:<url-encoded-password>@10.10.3.4:5432/gradorra?sslmode=require
+
+services:
+  api:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      AUTO_INIT_DB: "true"   # creates tables + districts on first boot; safe to re-run
+      PORT: "8000"
+    ports:
+      - "8000:8000"

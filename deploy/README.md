@@ -14,7 +14,39 @@ TLS ends at the gateway, so nothing on the VM deals with certificates. The API
 listens on plain HTTP port 8000 and Postgres is reachable only from the API
 container.
 
-## What you need first
+## The client's actual setup (found on the VM)
+
+- API VM: `vm-gradorra-api-prod-prep-001`, Ubuntu 24.04
+- Database: **Azure Database for PostgreSQL**, `10.10.3.4:5432`, Postgres 17,
+  admin user `gradorradbadmin`, TLS required. Use `docker-compose.azure.yml` --
+  it runs only the API and does not start a db container.
+- Front end: Next.js on another VM, `10.10.1.8:3000`
+
+### Azure database, one time
+
+From the API VM, create the application database (you were in the default
+`postgres` database):
+
+```bash
+psql "host=10.10.3.4 port=5432 dbname=postgres user=gradorradbadmin sslmode=require"
+```
+```sql
+CREATE DATABASE gradorra;
+\q
+```
+
+Then in `.env`:
+
+```
+COMPOSE_FILE=docker-compose.azure.yml
+DATABASE_URL=postgresql://gradorradbadmin:<password>@10.10.3.4:5432/gradorra?sslmode=require
+```
+
+If the password contains `@ : / # ? %` or spaces, URL-encode them (`@` → `%40`,
+`#` → `%23`, `%` → `%25`), or the URL is misread. `AUTO_INIT_DB` builds the
+tables and the 75 districts on first start.
+
+
 
 From the client's infra person:
 

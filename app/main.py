@@ -281,6 +281,12 @@ def health() -> dict:
         "whatsapp_provider": settings.whatsapp_provider,
         "razorpay_configured": settings.razorpay_configured,
         "sync_job": settings.sync_enabled,
+        "email": (
+            "off" if not settings.email_enabled
+            else "console" if settings.email_provider != "smtp"
+            else "smtp" if settings.smtp_password
+            else "smtp, no password -- skipped"
+        ),
     }
     if db_error:
         body["database_error"] = db_error

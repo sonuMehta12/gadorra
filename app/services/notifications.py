@@ -156,12 +156,14 @@ def send_acknowledgement(db: Session, registration: Registration, number: str) -
     the other, and every attempt is recorded.
     """
     sent: list[Notification] = []
-    ack_email = send_acknowledgement_email(db, registration, number)
-    if ack_email is not None:
-        sent.append(ack_email)
+    # WhatsApp first: it is the channel that works today, and email can stall on
+    # a slow SMTP login while the student waits on the payment screen.
     ack_whatsapp = send_acknowledgement_whatsapp(db, registration, number)
     if ack_whatsapp is not None:
         sent.append(ack_whatsapp)
+    ack_email = send_acknowledgement_email(db, registration, number)
+    if ack_email is not None:
+        sent.append(ack_email)
     return sent
 
 
@@ -256,9 +258,13 @@ def send_acknowledgement_email(db: Session, registration: Registration, number: 
             # A receipt that will not render must not stop the number reaching the student.
             log.exception("could not attach the receipt, sending the email without it")
 
-    provider = get_email_provider()
     n = _record(db, registration.id, "acknowledgement_email", student.email, {"number": number},
                 channel="email")
+    if settings.email_provider == "smtp" and not settings.smtp_password:
+        # Skip the network round trip entirely; record why, so it can be resent later.
+        return _block(db, n, "EMAIL_NOT_CONFIGURED", "SMTP_PASSWORD is empty")
+
+    provider = get_email_provider()
     return _dispatch(
         db, n,
         lambda: provider.send(student.email, subject, text, html, attachments),

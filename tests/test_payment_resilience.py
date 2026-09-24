@@ -68,3 +68,26 @@ def test_verify_never_returns_database_internals(client, registration, monkeypat
     for leaked in ("psycopg", "insert into", "notifications", "secret@example.com"):
         assert leaked not in text, f"{leaked!r} leaked to the client"
     assert r.json()["detail"]["code"] == "VERIFY_FAILED"
+
+
+def test_whatsapp_goes_first_and_empty_smtp_makes_no_network_call(db, paid, monkeypatch):
+    from app.config import settings
+    from app.services import notifications as notif
+
+    _, _, _, result = paid
+    db.query(Notification).delete()
+    db.flush()
+
+    monkeypatch.setattr(settings, "email_provider", "smtp")
+    monkeypatch.setattr(settings, "smtp_password", "")
+
+    def no_network():
+        raise AssertionError("an SMTP connection was attempted with no password")
+
+    monkeypatch.setattr(notif, "get_email_provider", no_network)
+    sent = notif.send_acknowledgement(db, result.registration, "GPET26/UP49/11111")
+
+    assert [n.channel for n in sent] == ["whatsapp", "email"]
+    assert sent[0].status.value == "SENT"
+    assert sent[1].status.value == "FAILED"
+    assert sent[1].error.startswith("EMAIL_NOT_CONFIGURED")

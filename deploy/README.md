@@ -46,7 +46,7 @@ If the password contains `@ : / # ? %` or spaces, URL-encode them (`@` → `%40`
 `#` → `%23`, `%` → `%25`), or the URL is misread. `AUTO_INIT_DB` builds the
 tables and the 75 districts on first start.
 
-
+## What you need first
 
 From the client's infra person:
 

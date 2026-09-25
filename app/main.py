@@ -99,7 +99,8 @@ There is no login. Two things stand in for it:
 - **`X-Form-Token`** -- proves this browser verified that mobile by OTP. Needed by
   `/registrations` and `/acknowledgements/*`. Missing header gives `422
   FORM_TOKEN_MISSING`, a bad one `401 FORM_TOKEN_INVALID`, an old one `401
-  FORM_TOKEN_EXPIRED` -- in every case, verify the mobile again.
+  FORM_TOKEN_EXPIRED`, one ended by `POST /logout` `401 FORM_TOKEN_REVOKED` --
+  in every case, verify the mobile again.
 - **The registration id** -- a UUID, unguessable, and enough on its own to read a
   registration or its receipt.
 

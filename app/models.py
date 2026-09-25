@@ -215,3 +215,15 @@ class WebhookEvent(Base, TimestampMixin):
     processed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     payload: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class RevokedToken(Base):
+    """A form token ended by logout. Kept only until the token would have expired
+    anyway -- after that the signature check rejects it on its own."""
+    __tablename__ = "revoked_tokens"
+
+    jti: Mapped[str] = mapped_column(String(64), primary_key=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    revoked_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )

@@ -4,14 +4,16 @@ There is no password. "Logging in" is the same OTP flow the form uses:
 /otp/send, /otp/verify, then this endpoint with the X-Form-Token it returned.
 The mobile comes from the token, so a student can only ever see their own data.
 """
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.database import get_db
-from app.models import Registration, RegistrationStatus, Student
+from app.models import Registration, RegistrationStatus, RevokedToken, Student
 from app.schemas import ProfileOut, ProfileRegistration, ProfileStudent
-from app.security import verified_mobile
+from app.security import verified_claims, verified_mobile
 
 router = APIRouter(tags=["account"])
 
@@ -82,3 +84,26 @@ def me(db: Session = Depends(get_db), mobile: str = Depends(verified_mobile)) ->
         ),
         registrations=items,
     )
+
+
+@router.post(
+    "/logout",
+    summary="End the current login",
+    description="Requires `X-Form-Token`. After this the token is refused everywhere with "
+                "`401 FORM_TOKEN_REVOKED`, even though it has not expired yet. Delete it on the "
+                "client too. Calling logout again with the same token returns the same revoked error.",
+    responses={
+        401: {"description": "FORM_TOKEN_INVALID, FORM_TOKEN_EXPIRED or FORM_TOKEN_REVOKED"},
+        422: {"description": "FORM_TOKEN_MISSING"},
+    },
+)
+def logout(claims: dict = Depends(verified_claims), db: Session = Depends(get_db)) -> dict:
+    now = datetime.now(timezone.utc)
+    jti = claims.get("jti")
+    if jti:
+        expires = datetime.fromtimestamp(claims["exp"], tz=timezone.utc)
+        db.merge(RevokedToken(jti=jti, expires_at=expires))
+    # housekeeping: rows past their token's expiry protect nothing any more
+    db.query(RevokedToken).filter(RevokedToken.expires_at < now).delete(synchronize_session=False)
+    db.commit()
+    return {"logged_out": True}

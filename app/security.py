@@ -4,9 +4,11 @@ import secrets
 from datetime import datetime, timedelta, timezone
 
 import jwt
-from fastapi import Header, HTTPException, status
+from fastapi import Depends, Header, HTTPException, status
+from sqlalchemy.orm import Session
 
 from app.config import settings
+from app.database import get_db
 
 ALGORITHM = "HS256"
 
@@ -29,12 +31,13 @@ def generate_otp(length: int | None = None) -> str:
 def issue_form_token(mobile: str) -> tuple[str, int]:
     ttl = settings.form_token_ttl_minutes
     expires = datetime.now(timezone.utc) + timedelta(minutes=ttl)
-    payload = {"sub": mobile, "scope": "form", "exp": expires}
+    # jti lets one token be revoked on logout without touching any other session
+    payload = {"sub": mobile, "scope": "form", "exp": expires, "jti": secrets.token_hex(16)}
     token = jwt.encode(payload, settings.jwt_secret, algorithm=ALGORITHM)
     return token, ttl * 60
 
 
-def decode_form_token(token: str) -> str:
+def decode_form_token_claims(token: str) -> dict:
     try:
         payload = jwt.decode(token, settings.jwt_secret, algorithms=[ALGORITHM])
     except jwt.ExpiredSignatureError:
@@ -49,9 +52,35 @@ def decode_form_token(token: str) -> str:
         )
     if payload.get("scope") != "form":
         raise HTTPException(status_code=401, detail={"code": "FORM_TOKEN_INVALID", "message": "Invalid token scope"})
-    return payload["sub"]
+    return payload
 
 
-def verified_mobile(x_form_token: str = Header(..., alias="X-Form-Token")) -> str:
+def decode_form_token(token: str) -> str:
+    return decode_form_token_claims(token)["sub"]
+
+
+def is_revoked(db: Session, jti: str | None) -> bool:
+    # Tokens issued before logout existed carry no jti; they simply run out at
+    # their 15-minute expiry, as they always did.
+    if not jti:
+        return False
+    from app.models import RevokedToken
+    return db.get(RevokedToken, jti) is not None
+
+
+def verified_claims(
+    x_form_token: str = Header(..., alias="X-Form-Token"),
+    db: Session = Depends(get_db),
+) -> dict:
+    claims = decode_form_token_claims(x_form_token)
+    if is_revoked(db, claims.get("jti")):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"code": "FORM_TOKEN_REVOKED", "message": "You have logged out. Verify your mobile to continue."},
+        )
+    return claims
+
+
+def verified_mobile(claims: dict = Depends(verified_claims)) -> str:
     """FastAPI dependency: returns the OTP-verified mobile behind the request."""
-    return decode_form_token(x_form_token)
+    return claims["sub"]

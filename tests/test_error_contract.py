@@ -124,6 +124,6 @@ def test_every_documented_code_appears_in_the_openapi_schema(client):
     for code in [
         "OTP_RATE_LIMITED", "OTP_INVALID", "OTP_EXPIRED", "FORM_TOKEN_EXPIRED",
         "ALREADY_REGISTERED", "SIGNATURE_INVALID", "AMOUNT_MISMATCH",
-        "MOBILE_NOT_VERIFIED", "NOT_PAID", "RATE_LIMITED",
+        "MOBILE_NOT_VERIFIED", "NOT_PAID", "RATE_LIMITED", "FORM_TOKEN_REVOKED",
     ]:
         assert code in text, f"{code} is not documented anywhere in the OpenAPI schema"

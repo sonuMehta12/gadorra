@@ -22,8 +22,13 @@ How rows are matched:
                  follow their registration. Rows the target already has (same
                  id, order id, payment id or acknowledgement number) are skipped.
 
-Not copied: otp_requests (dead after ten minutes), revoked_tokens (logout state
-for tokens that have expired), webhook_events (Razorpay's delivery log).
+Not copied: registrations still PENDING_PAYMENT (they may yet be paid in the
+source; run again once they settle), otp_requests (dead after ten minutes),
+revoked_tokens (logout state for expired tokens), webhook_events (Razorpay's
+delivery log).
+
+Refuses to --apply when a student PAID in the source but has an unpaid
+registration in the target: skipping it would lose their payment.
 
 Everything runs in one transaction. If any step fails, or a copied registration
 would lose its acknowledgement number, nothing is written. Running it again after
@@ -128,13 +133,32 @@ def main(apply: bool) -> None:
 
             copied_regs = set()
             paid_regs = set()
+            # The source paid, the target did not: skipping the source here would
+            # lose a student's payment and acknowledgement. Never decided silently.
+            paid_left_behind = []
+            # Still open in the source: the student may yet pay there. Copied now,
+            # it would stay PENDING in the target forever (this script never updates)
+            # and the target's sync job could settle the same order a second time.
+            # Left for a later run, when it has become PAID or EXPIRED.
+            pending_left = 0
             for row in fetch(src, "registrations", cols["registrations"]):
                 if row["id"] in tgt_reg_ids:
                     already["registrations"] += 1
                     continue
+                if row["status"].value == "PENDING_PAYMENT":
+                    pending_left += 1
+                    continue
                 student_id = student_map[row["student_id"]]
                 slot = tgt_reg_slot.get((student_id, row["phase"]))
                 if slot is not None:
+                    src_status = row["status"].value
+                    tgt_status = slot["status"].value if hasattr(slot["status"], "value") else str(slot["status"])
+                    if src_status == "PAID" and tgt_status != "PAID":
+                        paid_left_behind.append(
+                            f"mobile {src_students[row['student_id']]}: PAID in the source, "
+                            f"{tgt_status} in the target"
+                        )
+                        continue
                     conflicts.append(
                         f"mobile {src_students[row['student_id']]}: {row['phase'].value} registration "
                         f"exists in both (source {row['status'].value}, target {slot['status'].value}) "
@@ -174,6 +198,14 @@ def main(apply: bool) -> None:
             # A collision already aborted above, so anything left here was missing in
             # the source too. Worth knowing, not worth blocking the rest.
             missing_ack = sorted(str(r) for r in paid_regs - acked)
+
+            if paid_left_behind and apply:
+                raise Abort(
+                    f"{len(paid_left_behind)} student(s) paid in the source but have an unpaid "
+                    f"registration in the target. Copying would leave their payment behind, so "
+                    f"nothing was written. Resolve these first:\n    "
+                    + "\n    ".join(paid_left_behind)
+                )
 
             # ---- payments
             tgt_pay = fetch(tgt, "payments", ["id", "razorpay_order_id", "razorpay_payment_id"])
@@ -221,6 +253,14 @@ def main(apply: bool) -> None:
             print(f"\n{len(reused_students)} student(s) already in the target by mobile, reused as they are:")
             for m in reused_students:
                 print(f"  {m}")
+        if pending_left:
+            print(f"\n{pending_left} registration(s) still PENDING_PAYMENT in the source were left there.")
+            print("   Run this again once they are paid or expired to bring them across.")
+        if paid_left_behind:
+            print(f"\n!! {len(paid_left_behind)} student(s) PAID in the source but NOT in the target.")
+            print("   --apply will refuse to run until these are resolved:")
+            for m in paid_left_behind:
+                print(f"     {m}")
         if missing_ack:
             print(f"\n{len(missing_ack)} paid registration(s) have no acknowledgement number in the source either:")
             for r in missing_ack:

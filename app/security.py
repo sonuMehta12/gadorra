@@ -61,7 +61,7 @@ def decode_form_token(token: str) -> str:
 
 def is_revoked(db: Session, jti: str | None) -> bool:
     # Tokens issued before logout existed carry no jti; they simply run out at
-    # their 15-minute expiry, as they always did.
+    # their expiry, as they always did.
     if not jti:
         return False
     from app.models import RevokedToken

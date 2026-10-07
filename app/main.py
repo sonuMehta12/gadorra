@@ -13,7 +13,7 @@ from sqlalchemy import text
 from app.config import settings
 from app.rate_limit import client_ip, limiter
 from app.database import engine
-from app.routers import account, lookup, masters, otp, payments, receipts, registrations, webhooks
+from app.routers import account, auth, lookup, masters, otp, payments, receipts, registrations, webhooks
 from app.services import sync_job
 
 logging.basicConfig(
@@ -70,7 +70,7 @@ Student registration, payment and WhatsApp acknowledgement for GPET 2026.
 | # | Call | What you get |
 | - | ---- | ------------ |
 | 1 | `POST /otp/send` | An OTP goes to that mobile on WhatsApp |
-| 2 | `POST /otp/verify` | `form_token`, valid **15 minutes** |
+| 2 | `POST /otp/verify` | `form_token`, valid **60 minutes** |
 | 3 | `POST /registrations` | The registration, with the fee the server decided |
 | 4 | `POST /payments/order` | `razorpay_order_id` + the public key for Checkout |
 | 5 | `POST /payments/verify` | `PAID` and the **acknowledgement number** |
@@ -87,10 +87,23 @@ generated once and the WhatsApp message sent once, however many times it fires.
 
 ### Logging in later
 
-A student who already registered logs in the same way: `POST /otp/send`, then
-`POST /otp/verify`, then `GET /me` with the `X-Form-Token`. It returns their
-details and every registration with its status, acknowledgement number and
-receipt links. `404 NOT_REGISTERED` means the mobile has never registered.
+A student who already submitted the form, paid or not, logs in with:
+
+| # | Call | What you get |
+| - | ---- | ------------ |
+| 1 | `POST /auth/login/send-otp` | An OTP on WhatsApp -- or `404 NOT_REGISTERED`, and nothing is sent |
+| 2 | `POST /auth/login/verify` | `form_token` (60 minutes) **and** the profile |
+
+The profile is the same body `GET /me` returns: details, and every registration
+with its status, acknowledgement number and receipt links. A `PENDING_PAYMENT`
+registration can be paid from there with `POST /payments/order`.
+
+On `404 NOT_REGISTERED`, send the student to the registration form, which uses
+`/otp/send` and `/otp/verify` -- those two work for any mobile.
+
+**Keep the token across a page refresh.** It is only returned in the response
+body; no cookie is set. Store it (`localStorage`), send it as `X-Form-Token`, and
+on load call `GET /me` with it. On any `401`, drop it and log in again.
 
 ### Authentication
 
@@ -173,7 +186,7 @@ app.add_middleware(
 
 for r in (
     otp.router, masters.router, registrations.router, payments.router,
-    receipts.router, lookup.router, account.router, webhooks.router,
+    receipts.router, lookup.router, account.router, auth.router, webhooks.router,
 ):
     app.include_router(r, prefix=settings.api_prefix)
 
@@ -183,6 +196,7 @@ for r in (
 _BUCKETS = [
     ("POST", "/registrations", "registrations", "rate_limit_registration", "rate_limit_registration_window_seconds"),
     ("POST", "/otp/send", "otp", "rate_limit_otp", "rate_limit_otp_window_seconds"),
+    ("POST", "/auth/login/send-otp", "otp", "rate_limit_otp", "rate_limit_otp_window_seconds"),
 ]
 
 

@@ -24,7 +24,7 @@ router = APIRouter(tags=["account"])
     summary="The logged-in student's profile and registrations",
     description="Requires `X-Form-Token` from `/otp/verify`. Returns the student's details and "
                 "every registration they have made, newest first, with the acknowledgement number "
-                "and receipt links once paid. The token lasts 15 minutes; after that, verify again.",
+                "and receipt links once paid. The token lasts 60 minutes; after that, log in again.",
     responses={
         404: {"description": "NOT_REGISTERED -- this mobile has never registered"},
         401: {"description": "FORM_TOKEN_INVALID or FORM_TOKEN_EXPIRED"},
@@ -32,13 +32,28 @@ router = APIRouter(tags=["account"])
     },
 )
 def me(db: Session = Depends(get_db), mobile: str = Depends(verified_mobile)) -> ProfileOut:
+    return build_profile(db, registered_student(db, mobile))
+
+
+def registered_student(db: Session, mobile: str) -> Student:
+    """The student on this mobile, or 404 NOT_REGISTERED.
+
+    A student row is written together with their first registration, so having
+    one means the form was submitted -- paid or not.
+    """
     student = db.query(Student).filter(Student.mobile == mobile).one_or_none()
     if student is None:
         raise HTTPException(
             status_code=404,
-            detail={"code": "NOT_REGISTERED", "message": "No registration found for this mobile number"},
+            detail={
+                "code": "NOT_REGISTERED",
+                "message": "This mobile number is not registered. Please register first.",
+            },
         )
+    return student
 
+
+def build_profile(db: Session, student: Student) -> ProfileOut:
     registrations = (
         db.query(Registration)
         .filter(Registration.student_id == student.id)

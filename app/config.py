@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+psycopg://gradorra:gradorra@localhost:5435/gradorra"
 
     jwt_secret: str = "change-me"
-    form_token_ttl_minutes: int = 15
+    form_token_ttl_minutes: int = 60
 
     otp_channel: str = "console"
     otp_length: int = 6

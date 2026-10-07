@@ -199,3 +199,7 @@ class ProfileOut(BaseModel):
     )
     student: ProfileStudent
     registrations: list[ProfileRegistration] = Field(description="Newest first")
+
+
+class LoginOut(OtpVerifyOut):
+    profile: ProfileOut = Field(description="The same body GET /me returns, so no second call is needed")

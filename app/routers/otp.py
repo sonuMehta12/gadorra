@@ -25,12 +25,17 @@ router = APIRouter(prefix="/otp", tags=["otp"])
     },
 )
 def send(payload: OtpSendIn, db: Session = Depends(get_db)) -> OtpSendOut:
+    return issue_otp(db, payload.mobile)
+
+
+def issue_otp(db: Session, mobile: str) -> OtpSendOut:
+    """Send a fresh code to this mobile. Shared by the form flow and login."""
     now = datetime.now(timezone.utc)
     window_start = now - timedelta(hours=1)
 
     recent = (
         db.query(func.count(OtpRequest.id))
-        .filter(OtpRequest.mobile == payload.mobile, OtpRequest.created_at >= window_start)
+        .filter(OtpRequest.mobile == mobile, OtpRequest.created_at >= window_start)
         .scalar()
     )
     if recent >= settings.otp_max_resends:
@@ -44,19 +49,19 @@ def send(payload: OtpSendIn, db: Session = Depends(get_db)) -> OtpSendOut:
 
     # Any earlier unconsumed OTP for this mobile is dead once a new one goes out.
     db.query(OtpRequest).filter(
-        OtpRequest.mobile == payload.mobile, OtpRequest.consumed.is_(False)
+        OtpRequest.mobile == mobile, OtpRequest.consumed.is_(False)
     ).update({"consumed": True}, synchronize_session=False)
 
     code = generate_otp()
     otp = OtpRequest(
-        mobile=payload.mobile,
-        code_hash=hash_otp(payload.mobile, code),
+        mobile=mobile,
+        code_hash=hash_otp(mobile, code),
         expires_at=now + timedelta(minutes=settings.otp_ttl_minutes),
     )
     db.add(otp)
     db.flush()
 
-    notification = send_otp(db, payload.mobile, code)
+    notification = send_otp(db, mobile, code)
 
     # If the send was blocked or rejected, say so instead of claiming it went out.
     if notification.status is not NotificationStatus.SENT:
@@ -96,17 +101,24 @@ def send(payload: OtpSendIn, db: Session = Depends(get_db)) -> OtpSendOut:
     response_model=OtpVerifyOut,
     summary="Verify the OTP and get a form token",
     description="On success returns `form_token`. Send it as the `X-Form-Token` header on "
-                "`/registrations` and `/acknowledgements/*`. It lasts 15 minutes.",
+                "`/registrations` and `/acknowledgements/*`. It lasts 60 minutes.",
     responses={
         400: {"description": "OTP_INVALID, OTP_EXPIRED or OTP_NOT_FOUND"},
         429: {"description": "OTP_TOO_MANY_ATTEMPTS -- request a new code"},
     },
 )
 def verify(payload: OtpVerifyIn, db: Session = Depends(get_db)) -> OtpVerifyOut:
+    check_otp(db, payload.mobile, payload.code)
+    token, ttl = issue_form_token(payload.mobile)
+    return OtpVerifyOut(verified=True, form_token=token, expires_in_seconds=ttl)
+
+
+def check_otp(db: Session, mobile: str, code: str) -> None:
+    """Consume the code if it is right; raise the matching OTP_* error if not."""
     now = datetime.now(timezone.utc)
     otp = (
         db.query(OtpRequest)
-        .filter(OtpRequest.mobile == payload.mobile, OtpRequest.consumed.is_(False))
+        .filter(OtpRequest.mobile == mobile, OtpRequest.consumed.is_(False))
         .order_by(OtpRequest.created_at.desc())
         .with_for_update()
         .first()
@@ -131,7 +143,7 @@ def verify(payload: OtpVerifyIn, db: Session = Depends(get_db)) -> OtpVerifyOut:
         )
 
     otp.attempts += 1
-    if not verify_otp_hash(payload.mobile, payload.code, otp.code_hash):
+    if not verify_otp_hash(mobile, code, otp.code_hash):
         db.commit()
         raise HTTPException(
             status_code=400,
@@ -144,6 +156,3 @@ def verify(payload: OtpVerifyIn, db: Session = Depends(get_db)) -> OtpVerifyOut:
     otp.verified = True
     otp.consumed = True
     db.commit()
-
-    token, ttl = issue_form_token(payload.mobile)
-    return OtpVerifyOut(verified=True, form_token=token, expires_in_seconds=ttl)

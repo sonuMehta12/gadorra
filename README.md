@@ -22,7 +22,7 @@ cp .env.example .env                      # then fill in the credentials
 
 ```
 POST /otp/send            code to WhatsApp (or the server log in dev)
-POST /otp/verify          returns a 15-minute form token
+POST /otp/verify          returns a 60-minute form token
 POST /registrations       needs X-Form-Token; saves the student, fee decided server-side
 POST /payments/order      creates a Razorpay order at the server's price
      -> Razorpay checkout in the browser

@@ -16,6 +16,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.config import settings
+from app.logging_setup import mask_mobile
 from app.models import Notification, NotificationStatus, Registration
 from app.services.email import Attachment, get_provider as get_email_provider
 from app.services.whatsapp import get_provider, to_e164
@@ -107,14 +108,17 @@ def _dispatch(db: Session, n: Notification, send, check_limits: bool = True) -> 
 def _deliver(db: Session, n: Notification, send) -> Notification:
     n.attempts += 1
     result = send()
+    fields = {"channel": n.channel, "template": n.template, "to": mask_mobile(n.recipient),
+              "registration_id": str(n.registration_id) if n.registration_id else None}
     if result.ok:
         n.status = NotificationStatus.SENT
         n.provider_message_id = result.provider_message_id
         n.error = None
+        log.info("%s sent", n.channel, extra=fields)
     else:
         n.status = NotificationStatus.FAILED
         n.error = result.error
-        log.error("%s send failed: %s", n.channel, result.error)
+        log.error("%s send failed: %s", n.channel, result.error, extra=fields)
     db.flush()
     return n
 

@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -11,15 +12,13 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 
 from app.config import settings
+from app.logging_setup import setup_logging
 from app.rate_limit import client_ip, limiter
 from app.database import engine
 from app.routers import account, auth, lookup, masters, otp, payments, receipts, registrations, webhooks
 from app.services import sync_job
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)-7s %(name)s: %(message)s",
-)
+setup_logging(settings.log_dir, settings.log_retention_days)
 
 def _bootstrap_database() -> None:
     """Idempotent: create anything missing, leave everything that exists alone."""
@@ -239,6 +238,30 @@ async def rate_limit(request: Request, call_next):
 
     return await call_next(request)
 
+
+
+# Registered after rate_limit, so it runs outside it and records the 429s too.
+@app.middleware("http")
+async def request_log(request: Request, call_next):
+    started = time.perf_counter()
+    status = 500
+    try:
+        response = await call_next(request)
+        status = response.status_code
+        return response
+    finally:
+        path = request.url.path
+        # the gateway probes /health every few seconds; only a failing probe is news
+        if not (path == "/health" and status < 400):
+            logging.getLogger("request").log(
+                logging.WARNING if status >= 500 else logging.INFO,
+                "%s %s %s", request.method, path, status,
+                extra={
+                    "method": request.method, "path": path, "status": status,
+                    "ms": round((time.perf_counter() - started) * 1000),
+                    "ip": client_ip(request),
+                },
+            )
 
 @app.exception_handler(RequestValidationError)
 async def validation_failed(request: Request, exc: RequestValidationError) -> JSONResponse:

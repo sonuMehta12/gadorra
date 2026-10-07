@@ -185,6 +185,37 @@ Once it answers from outside (`https://api.gpet.org.in/health`), the front end's
 base URL is **`https://api.gpet.org.in/api/v1`** and the reference is
 `https://api.gpet.org.in/docs`.
 
+## Logs
+
+The API writes one JSON object per line to `~/gradorra/logs/app.log` on the VM.
+A new file starts each day at 05:30 IST (midnight UTC); the previous day
+becomes `app.log.YYYY-MM-DD`, and only the last 7 days are kept
+(`LOG_RETENTION_DAYS` in `.env`). The folder is mounted into the container, so
+it survives redeploys.
+
+```bash
+tail -f ~/gradorra/logs/app.log                          # live
+grep '"level": "ERROR"' ~/gradorra/logs/app.log*         # every error this week
+grep '99\*\*\*\*6948' ~/gradorra/logs/app.log*           # one student: first 2 + last 4 digits
+grep 'registration paid' ~/gradorra/logs/app.log | wc -l # payments today
+```
+
+What is in it:
+
+| `logger` | Lines |
+| --- | --- |
+| `request` | every API call: method, path, status, `ms`, the student's `ip` (`/health` only when failing) |
+| `otp`, `login` | OTP sent and verified, logged in, refused as not registered, logged out |
+| `registrations` | form submitted, with district, phase and fee |
+| `payments`, `payments.router` | order created, payment not captured, **registration paid** with the acknowledgement number |
+| `notifications` | each WhatsApp message sent or failed, and why |
+| `sync_job` | the 10-minute payment check |
+
+Mobile numbers are masked (`99****6948`). The full record of every student,
+payment and message is in the database; the log is for *when* and *what went
+wrong*. `docker compose -f docker-compose.azure.yml logs api` still shows the
+same events as plain text, capped at 30 MB.
+
 ## When something is wrong
 
 ```bash

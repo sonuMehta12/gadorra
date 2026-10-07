@@ -83,6 +83,10 @@ class Settings(BaseSettings):
     bot_check_secret: str = ""
     bot_check_required: bool = False
 
+    # JSON log file, one line per event, a file per day. Empty = terminal only.
+    log_dir: str = ""
+    log_retention_days: int = 7
+
     # background settler for payments the browser never reported
     # create tables and seed districts on boot -- for a fresh deploy with no migrations
     auto_init_db: bool = False

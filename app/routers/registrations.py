@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
@@ -6,12 +7,14 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.database import get_db
+from app.logging_setup import mask_mobile
 from app.models import Acknowledgement, District, Phase, Registration, RegistrationStatus, Student
 from app.schemas import RegistrationIn, RegistrationOut
 from app.rate_limit import client_ip
 from app.security import verified_mobile
 from app.services import bot_check
 
+log = logging.getLogger("registrations")
 router = APIRouter(prefix="/registrations", tags=["registrations"])
 
 
@@ -164,6 +167,9 @@ def create(
         )
         db.commit()
         db.refresh(existing)
+        log.info("registration reopened", extra={
+            "registration_id": str(existing.id), "mobile": mask_mobile(mobile), "fee_paise": fee,
+        })
         return _serialize(existing)
 
     registration = Registration(
@@ -179,6 +185,10 @@ def create(
     db.add(registration)
     db.commit()
     db.refresh(registration)
+    log.info("registration created", extra={
+        "registration_id": str(registration.id), "mobile": mask_mobile(mobile),
+        "district": district.name, "phase": phase.value, "fee_paise": fee,
+    })
     return _serialize(registration)
 
 

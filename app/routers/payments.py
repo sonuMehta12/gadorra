@@ -80,6 +80,10 @@ def create_order(payload: OrderIn, db: Session = Depends(get_db)) -> OrderOut:
     )
     db.add(payment)
     db.commit()
+    log.info("payment order created", extra={
+        "registration_id": str(registration.id), "order_id": order["id"],
+        "amount_paise": registration.fee_amount_paise,
+    })
 
     return OrderOut(
         razorpay_order_id=order["id"],

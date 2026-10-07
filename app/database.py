@@ -15,6 +15,9 @@ engine = create_engine(
     pool_size=5,
     max_overflow=5,
     connect_args={"connect_timeout": 10},
+    # A failed query's error text would otherwise carry its values -- names,
+    # mobiles, emails -- into the log.
+    hide_parameters=True,
     future=True,
 )
 SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False, future=True)

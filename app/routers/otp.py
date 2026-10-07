@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -5,12 +6,14 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.config import settings
+from app.logging_setup import mask_mobile
 from app.database import get_db
 from app.models import Notification, NotificationStatus, OtpRequest
 from app.schemas import OtpSendIn, OtpSendOut, OtpVerifyIn, OtpVerifyOut
 from app.security import generate_otp, hash_otp, issue_form_token, verify_otp_hash
 from app.services.notifications import send_otp
 
+log = logging.getLogger("otp")
 router = APIRouter(prefix="/otp", tags=["otp"])
 
 
@@ -87,6 +90,7 @@ def issue_otp(db: Session, mobile: str) -> OtpSendOut:
         )
 
     db.commit()
+    log.info("otp sent", extra={"mobile": mask_mobile(mobile)})
 
     return OtpSendOut(
         sent=True,
@@ -156,3 +160,4 @@ def check_otp(db: Session, mobile: str, code: str) -> None:
     otp.verified = True
     otp.consumed = True
     db.commit()
+    log.info("otp verified", extra={"mobile": mask_mobile(mobile)})

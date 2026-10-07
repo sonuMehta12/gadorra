@@ -78,6 +78,9 @@ def apply_payment(db: Session, payment_id: str, rzp_payment: dict | None = None)
         raise ValueError("payment amount does not match the order amount")
 
     if payment.status is not PaymentStatus.CAPTURED:
+        log.info("payment not captured", extra={
+            "order_id": order_id, "payment_id": payment_id, "payment_status": payment.status.value,
+        })
         if payment.status is PaymentStatus.FAILED:
             registration.status = RegistrationStatus.FAILED
         db.flush()
@@ -107,6 +110,10 @@ def apply_payment(db: Session, payment_id: str, rzp_payment: dict | None = None)
             source.redeemed_at = datetime.now(timezone.utc)
 
     db.flush()
+    log.info("registration paid", extra={
+        "registration_id": str(registration.id), "order_id": order_id,
+        "payment_id": payment_id, "amount_paise": payment.amount_paise, "ack": ack.number,
+    })
 
     # The money has landed and the number exists; nothing about messaging may undo
     # that. Notifications run in a savepoint, so a failure rolls back only their

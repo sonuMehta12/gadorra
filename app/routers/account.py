@@ -4,6 +4,7 @@ There is no password. "Logging in" is the same OTP flow the form uses:
 /otp/send, /otp/verify, then this endpoint with the X-Form-Token it returned.
 The mobile comes from the token, so a student can only ever see their own data.
 """
+import logging
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -11,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.database import get_db
+from app.logging_setup import mask_mobile
 from app.models import Registration, RegistrationStatus, RevokedToken, Student
 from app.schemas import ProfileOut, ProfileRegistration, ProfileStudent
 from app.security import verified_claims, verified_mobile
@@ -121,4 +123,5 @@ def logout(claims: dict = Depends(verified_claims), db: Session = Depends(get_db
     # housekeeping: rows past their token's expiry protect nothing any more
     db.query(RevokedToken).filter(RevokedToken.expires_at < now).delete(synchronize_session=False)
     db.commit()
+    logging.getLogger("login").info("logged out", extra={"mobile": mask_mobile(claims.get("sub"))})
     return {"logged_out": True}

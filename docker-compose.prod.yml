@@ -30,8 +30,16 @@ services:
       DATABASE_URL: postgresql+psycopg://gradorra:${POSTGRES_PASSWORD}@db:5432/gradorra
       AUTO_INIT_DB: "true"
       PORT: "8000"
+      LOG_DIR: /app/logs
     ports:
       - "8000:8000"
+    volumes:
+      # one JSON file per day, the last LOG_RETENTION_DAYS kept; survives redeploys
+      - ./logs:/app/logs
+    logging:
+      # docker's own copy of the terminal output, capped so it cannot fill the disk
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
     depends_on:
       db:
         condition: service_healthy

@@ -13,6 +13,14 @@ services:
     environment:
       AUTO_INIT_DB: "true"   # creates tables + districts on first boot; safe to re-run
       PORT: "8000"
+      LOG_DIR: /app/logs
     ports:
       # loopback only: nginx on :80 is the one door in from the gateway
       - "127.0.0.1:8000:8000"
+    volumes:
+      # one JSON file per day, the last LOG_RETENTION_DAYS kept; survives redeploys
+      - ./logs:/app/logs
+    logging:
+      # docker's own copy of the terminal output, capped so it cannot fill the disk
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }

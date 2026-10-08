@@ -185,6 +185,65 @@ Once it answers from outside (`https://api.gpet.org.in/health`), the front end's
 base URL is **`https://api.gpet.org.in/api/v1`** and the reference is
 `https://api.gpet.org.in/docs`.
 
+## Email through Microsoft 365 (Graph API)
+
+Microsoft 365 refuses SMTP login with a mailbox password (`535 5.7.3`), so the
+API sends through the Graph API instead, as an Entra ID app that is allowed to
+send mail. It needs no mailbox password, and changing the mailbox's password
+does not break it. Support requests go to `SUPPORT_EMAIL_TO`; student
+acknowledgement emails also use it once `EMAIL_ENABLED=true`.
+
+**In Azure (a Global or Application Administrator, once):**
+
+1. portal.azure.com → **Microsoft Entra ID** → **App registrations** →
+   **New registration**. Name `GPET API Mailer`, *Accounts in this
+   organizational directory only*, no redirect URI → **Register**.
+2. From its **Overview**, copy the **Directory (tenant) ID** and the
+   **Application (client) ID**.
+3. **Certificates & secrets** → **New client secret** → 24 months → copy the
+   **Value** (shown once). Note the expiry date: mail stops on that day unless a
+   new secret replaces it in `.env`.
+4. **API permissions** → **Add a permission** → **Microsoft Graph** →
+   **Application permissions** → **Mail.Send** → **Add**, then **Grant admin
+   consent for Gradorra**. The status must turn green.
+5. Limit the app to the one mailbox. Without this, Mail.Send lets it send as
+   *anyone* in the organisation. In PowerShell with the ExchangeOnlineManagement
+   module:
+   ```powershell
+   Connect-ExchangeOnline
+   New-DistributionGroup -Name "GPET API senders" -Alias gpetapisenders -Type Security -Members info@gradorra.com
+   New-ApplicationAccessPolicy -AppId <client-id> -PolicyScopeGroupId gpetapisenders@gradorra.com -AccessRight RestrictAccess -Description "GPET API sends only as info@"
+   Test-ApplicationAccessPolicy -Identity info@gradorra.com -AppId <client-id>      # Granted
+   Test-ApplicationAccessPolicy -Identity helpdesk@gradorra.com -AppId <client-id>  # Denied
+   ```
+   The policy can take up to an hour to apply.
+
+**On the VM**, in `~/gradorra/.env`:
+
+```
+EMAIL_PROVIDER=graph
+EMAIL_FROM=info@gradorra.com          # the mailbox it sends as, exactly as named in step 5
+GRAPH_TENANT_ID=<directory (tenant) id>
+GRAPH_CLIENT_ID=<application (client) id>
+GRAPH_CLIENT_SECRET=<secret value>
+SUPPORT_EMAIL_TO=helpdesk@gradorra.com
+```
+
+Then `bash deploy/deploy.sh`. `curl http://localhost:8000/health` shows
+`"support_email": "graph to helpdesk@gradorra.com"` when everything is set.
+Send a real test:
+
+```bash
+docker compose -f docker-compose.azure.yml exec api python -c "from app.config import settings as s; from app.services.email import get_provider; r=get_provider().send(s.support_email_to,'[GPET Support] TEST','Graph test from the GPET API'); print('sent' if r.ok else r.error)"
+```
+
+| Error | Means |
+| --- | --- |
+| `invalid_client ... AADSTS7000215` | wrong or expired secret |
+| `unauthorized_client` / `AADSTS700016` | wrong client or tenant id |
+| `graph 403 ... ErrorAccessDenied` | admin consent not granted, or the step 5 policy does not include `EMAIL_FROM` |
+| `graph 404 ... ErrorInvalidUser` / `MailboxNotEnabledForRESTAPI` | `EMAIL_FROM` is not a real licensed mailbox |
+
 ## Logs
 
 The API writes one JSON object per line to `~/gradorra/logs/app.log` on the VM.

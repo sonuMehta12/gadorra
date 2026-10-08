@@ -42,7 +42,7 @@ class Settings(BaseSettings):
     whatsapp_auth_template_button: bool = True
 
     # ---- email ----
-    # console | smtp
+    # console | smtp | graph
     email_provider: str = "console"
     email_enabled: bool = False
     email_from: str = "info@gradorra.in"
@@ -55,6 +55,19 @@ class Settings(BaseSettings):
     smtp_password: str = ""
     smtp_use_tls: bool = True
     smtp_use_ssl: bool = False
+    # graph: Microsoft 365 through an Entra ID app with the Mail.Send application
+    # permission. Mail goes out from the EMAIL_FROM mailbox; no mailbox password.
+    graph_tenant_id: str = ""
+    graph_client_id: str = ""
+    graph_client_secret: str = ""
+
+    # ---- support form ----
+    # Where portal support requests go. Sent whenever SMTP works, independent of
+    # EMAIL_ENABLED, which only governs emails to students.
+    support_email_to: str = "helpdesk@gradorra.com"
+    support_max_per_day: int = 5          # per mobile
+    # 3 MB: Graph's sendMail caps a request near 4 MB, and base64 adds a third
+    support_attachment_max_mb: int = 3
 
     razorpay_key_id: str = ""
     razorpay_key_secret: str = ""

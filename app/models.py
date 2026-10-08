@@ -8,6 +8,7 @@ from sqlalchemy import (
     Enum,
     ForeignKey,
     Integer,
+    LargeBinary,
     String,
     Text,
     UniqueConstraint,
@@ -227,3 +228,29 @@ class RevokedToken(Base):
     revoked_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+
+
+class SupportTicket(Base, TimestampMixin):
+    """A message from the portal's support form, kept even when the email to the
+    team fails, so nothing a student sends is lost."""
+    __tablename__ = "support_tickets"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
+    number: Mapped[str] = mapped_column(String(20), unique=True, nullable=False, index=True)
+    # The verified mobile always; the student only if they have registered.
+    mobile: Mapped[str] = mapped_column(String(10), nullable=False, index=True)
+    student_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("students.id"), nullable=True)
+    category: Mapped[str] = mapped_column(String(40), nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+    attachment_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    attachment_type: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    attachment: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    email_status: Mapped[NotificationStatus] = mapped_column(
+        Enum(NotificationStatus, name="notification_status"),
+        nullable=False,
+        default=NotificationStatus.QUEUED,
+    )
+    email_attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    email_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    student: Mapped["Student | None"] = relationship()

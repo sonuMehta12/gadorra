@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.logging_setup import mask_mobile
 from app.models import Notification, NotificationStatus, Registration
-from app.services.email import Attachment, get_provider as get_email_provider
+from app.services.email import Attachment, get_provider as get_email_provider, not_configured as email_not_configured
 from app.services.whatsapp import get_provider, to_e164
 
 log = logging.getLogger("notifications")
@@ -264,9 +264,9 @@ def send_acknowledgement_email(db: Session, registration: Registration, number: 
 
     n = _record(db, registration.id, "acknowledgement_email", student.email, {"number": number},
                 channel="email")
-    if settings.email_provider == "smtp" and not settings.smtp_password:
+    if (gap := email_not_configured()) is not None:
         # Skip the network round trip entirely; record why, so it can be resent later.
-        return _block(db, n, "EMAIL_NOT_CONFIGURED", "SMTP_PASSWORD is empty")
+        return _block(db, n, "EMAIL_NOT_CONFIGURED", gap)
 
     provider = get_email_provider()
     return _dispatch(

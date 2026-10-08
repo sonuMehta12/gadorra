@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.database import SessionLocal
 from app.models import Payment, PaymentStatus, Registration, RegistrationStatus
+from app.services import support
 from app.services.payments import sync_from_order
 
 log = logging.getLogger("sync_job")
@@ -79,6 +80,10 @@ async def run_forever() -> None:
         await asyncio.sleep(interval)
         db = SessionLocal()
         try:
+            # support emails that failed earlier, e.g. while SMTP was down
+            resent = await asyncio.to_thread(support.retry_unsent, db)
+            if resent:
+                log.info("sync pass: %s support email(s) resent", resent)
             if not settings.razorpay_configured:
                 continue
             checked, settled = await asyncio.to_thread(settle_open_orders, db)

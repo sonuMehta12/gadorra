@@ -203,3 +203,15 @@ class ProfileOut(BaseModel):
 
 class LoginOut(OtpVerifyOut):
     profile: ProfileOut = Field(description="The same body GET /me returns, so no second call is needed")
+
+
+# ---------- support ----------
+class SupportCategoryOut(BaseModel):
+    value: str = Field(description="Send this as `category`")
+    label: str = Field(description="Show this in the dropdown")
+
+
+class SupportTicketOut(BaseModel):
+    ticket_number: str = Field(description="e.g. SUP-7K3Q9M -- show it to the student")
+    category: str
+    message: str

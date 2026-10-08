@@ -13,9 +13,10 @@ from sqlalchemy import text
 
 from app.config import settings
 from app.logging_setup import setup_logging
+from app.services.email import not_configured as email_not_configured
 from app.rate_limit import client_ip, limiter
 from app.database import engine
-from app.routers import account, auth, lookup, masters, otp, payments, receipts, registrations, webhooks
+from app.routers import account, auth, lookup, masters, otp, payments, receipts, registrations, support, webhooks
 from app.services import sync_job
 
 setup_logging(settings.log_dir, settings.log_retention_days)
@@ -170,6 +171,7 @@ app = FastAPI(
         {"name": "receipts", "description": "Receipt as JSON, a printable page, or a PDF."},
         {"name": "account", "description": "Log in with a WhatsApp OTP and read your own profile."},
         {"name": "lookup", "description": "Find an earlier paid registration to prefill and discount."},
+        {"name": "support", "description": "The portal's support and profile-correction form, emailed to the team."},
         {"name": "webhooks", "description": "Razorpay calls these. Not for the front end."},
         {"name": "meta", "description": "Health and diagnostics."},
     ],
@@ -185,7 +187,7 @@ app.add_middleware(
 
 for r in (
     otp.router, masters.router, registrations.router, payments.router,
-    receipts.router, lookup.router, account.router, auth.router, webhooks.router,
+    receipts.router, lookup.router, account.router, auth.router, support.router, webhooks.router,
 ):
     app.include_router(r, prefix=settings.api_prefix)
 
@@ -196,6 +198,7 @@ _BUCKETS = [
     ("POST", "/registrations", "registrations", "rate_limit_registration", "rate_limit_registration_window_seconds"),
     ("POST", "/otp/send", "otp", "rate_limit_otp", "rate_limit_otp_window_seconds"),
     ("POST", "/auth/login/send-otp", "otp", "rate_limit_otp", "rate_limit_otp_window_seconds"),
+    ("POST", "/support/tickets", "support", "rate_limit_registration", "rate_limit_registration_window_seconds"),
 ]
 
 
@@ -329,9 +332,13 @@ def health() -> dict:
         "sync_job": settings.sync_enabled,
         "email": (
             "off" if not settings.email_enabled
-            else "console" if settings.email_provider != "smtp"
-            else "smtp" if settings.smtp_password
-            else "smtp, no password -- skipped"
+            else f"{settings.email_provider}, not configured -- skipped" if email_not_configured()
+            else settings.email_provider
+        ),
+        # the support form sends whether or not student emails are on
+        "support_email": (
+            f"{settings.email_provider}, not configured -- tickets saved, not sent" if email_not_configured()
+            else f"{settings.email_provider} to {settings.support_email_to}"
         ),
     }
     if db_error:
